@@ -1,0 +1,433 @@
+import os
+import asyncio
+import logging
+import time
+import warnings
+from contextlib import asynccontextmanager
+from typing import Optional
+
+warnings.filterwarnings("ignore", message=".*numba.*")
+
+logging.getLogger("physics.ac_powerflow").setLevel(logging.ERROR)
+logging.getLogger("pandapower").setLevel(logging.ERROR)
+logging.getLogger("openai._base_client").setLevel(logging.WARNING)
+logging.getLogger("httpx").setLevel(logging.WARNING)
+
+from dotenv import load_dotenv
+from fastapi import FastAPI, Query, Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
+
+from ontology.model import GridAlert
+from ontology.store import AlertManager, OntologyStore
+from physics.fault_handler import FaultHandler, FaultRequest, FaultType
+from physics.swing import GridSimulator, GridState
+from reasoning.engine import ReasoningEngine
+from decisions.models import AutonomousMode, ProposedAction
+from decisions.autonomous_engine import AutonomousEngine
+from chat.store import ChatStore, ChatMessage
+from chat.engine import ChatEngine
+
+load_dotenv()
+
+logging.basicConfig(level=logging.INFO)
+logging.getLogger("pandapower.auxiliary").setLevel(logging.ERROR)
+logger = logging.getLogger(__name__)
+
+simulator: GridSimulator
+fault_handler: FaultHandler
+ontology_store: OntologyStore
+alert_manager: AlertManager
+reasoning_engine: ReasoningEngine
+autonomous_engine: AutonomousEngine
+chat_store: ChatStore
+chat_engine: ChatEngine
+
+_broadcast_queues: list[asyncio.Queue] = []
+_sim_task: Optional[asyncio.Task] = None
+_demo_running: bool = False
+_demo_phase: Optional[str] = None
+_last_auto_reasoning: float = 0.0
+
+
+def _sim_tick():
+    """Run one simulation step (CPU-bound, called in thread)."""
+    return simulator.step()
+
+
+async def simulation_loop() -> None:
+    loop = asyncio.get_event_loop()
+    while True:
+        state = await loop.run_in_executor(None, _sim_tick)
+        if state is not None:
+            new_alerts = alert_manager.evaluate(state)
+            all_alerts = alert_manager.alerts
+            state = state.model_copy(update={
+                "active_alerts": [a.model_dump() for a in all_alerts[-30:]],
+                "ontology_dirty": True,
+            })
+            ontology_store.update_from_physics_state(state)
+
+            autonomous_engine.tick(state)
+
+            if not _demo_running:
+                for alert in new_alerts:
+                    if alert.severity in ("CRITICAL", "WARNING"):
+                        asyncio.create_task(autonomous_engine.on_alert(
+                            alert.type, alert.severity, state, alert.id
+                        ))
+                        break
+
+            payload = state.model_dump_json()
+            dead: list[asyncio.Queue] = []
+            for q in _broadcast_queues:
+                try:
+                    q.put_nowait(payload)
+                except asyncio.QueueFull:
+                    dead.append(q)
+            for q in dead:
+                _broadcast_queues.remove(q)
+
+        await asyncio.sleep(0.05)
+
+
+async def run_demo_scenario() -> None:
+    global _demo_running, _demo_phase
+    _demo_running = True
+    _demo_phase = "Restoring nominal state"
+    logger.info("DEMO SCENARIO: Starting")
+
+    simulator.restore()
+    alert_manager._alerts.clear()
+    alert_manager._last_fired.clear()
+    autonomous_engine.decision_log.clear()
+    await asyncio.sleep(4.0)
+
+    _demo_phase = "Injecting load spike — Bus 14 (+100 MW)"
+    logger.info("DEMO t=4s: LOAD_SPIKE on Bus 14, +100 MW")
+    fault_handler.apply(FaultRequest(
+        type=FaultType.LOAD_SPIKE,
+        target_rid="ri.city-grid.main.load-bus.14",
+        magnitude_mw=100.0,
+    ))
+    await asyncio.sleep(6.0)
+
+    _demo_phase = "Transformer 3 tripped"
+    logger.info("DEMO t=10s: TRAFO_TRIP on transformer 3")
+    fault_handler.apply(FaultRequest(
+        type=FaultType.TRAFO_TRIP,
+        target_rid="ri.city-grid.main.transformer.3",
+    ))
+    await asyncio.sleep(4.0)
+
+    _demo_phase = "GRID-AI analysing cascade scenario"
+    logger.info("DEMO t=14s: Triggering GRID-AI analysis")
+    state = simulator.get_state()
+    reasoning_engine._demo_mode = True
+    result = reasoning_engine.analyze(state, None, "AUTO_CRITICAL", "demo-cascade")
+    reasoning_engine._demo_mode = False
+
+    from decisions.models import GridDecision
+    from decisions.risk_classifier import RiskClassifier
+    from decisions.outcome_monitor import OutcomeMonitor
+    pre_snap = OutcomeMonitor.capture_snapshot(state)
+    for pa_dict in result.proposed_actions:
+        pa = ProposedAction(**pa_dict)
+        risk = RiskClassifier.classify(pa)
+        decision = GridDecision(
+            risk_level=risk,
+            action=pa,
+            triggered_by_alert_id="demo-cascade",
+            pre_state_snapshot=pre_snap,
+        )
+        autonomous_engine._apply_mode_policy(decision)
+        autonomous_engine.decision_log.record(decision)
+
+    _demo_phase = "Decisions queued — monitoring response"
+    await asyncio.sleep(8.0)
+
+    _demo_phase = "Line 12 tripped — cascading event"
+    logger.info("DEMO t=22s: LINE_TRIP on line index 12")
+    fault_handler.apply(FaultRequest(
+        type=FaultType.LINE_TRIP,
+        target_rid="ri.city-grid.main.transmission-line.12",
+    ))
+    await asyncio.sleep(8.0)
+
+    _demo_phase = "Complete — use RESTORE to recover"
+    logger.info("DEMO SCENARIO: Complete. Click RESTORE to recover.")
+    await asyncio.sleep(5.0)
+    _demo_running = False
+    _demo_phase = None
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    global simulator, fault_handler, ontology_store, alert_manager
+    global reasoning_engine, autonomous_engine, chat_store, chat_engine, _sim_task
+
+    simulator = GridSimulator()
+    fault_handler = FaultHandler(simulator)
+    ontology_store = OntologyStore()
+    alert_manager = AlertManager()
+
+    api_key = os.getenv("OPENAI_API_KEY", "")
+    demo_mode = not api_key or api_key == "your-api-key-here"
+    reasoning_engine = ReasoningEngine(api_key, demo_mode=demo_mode)
+    autonomous_engine = AutonomousEngine(simulator, reasoning_engine)
+    chat_store = ChatStore()
+    chat_engine = ChatEngine(api_key, demo_mode=demo_mode)
+
+    _sim_task = asyncio.create_task(simulation_loop())
+    logger.info("Simulation loop started (city-twin v2)")
+
+    yield
+
+    if _sim_task:
+        _sim_task.cancel()
+        try:
+            await _sim_task
+        except asyncio.CancelledError:
+            pass
+
+
+app = FastAPI(title="City-Twin Grid API v2", lifespan=lifespan)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+# --- SSE Stream ---
+
+@app.get("/stream")
+async def stream_state(request: Request):
+    queue: asyncio.Queue = asyncio.Queue(maxsize=50)
+    _broadcast_queues.append(queue)
+
+    async def event_generator():
+        try:
+            while True:
+                if await request.is_disconnected():
+                    break
+                try:
+                    payload = await asyncio.wait_for(queue.get(), timeout=1.0)
+                    yield f"data: {payload}\n\n"
+                except asyncio.TimeoutError:
+                    yield ": keepalive\n\n"
+        finally:
+            if queue in _broadcast_queues:
+                _broadcast_queues.remove(queue)
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+# --- Fault Injection ---
+
+@app.post("/fault")
+async def inject_fault(req: FaultRequest):
+    msg = fault_handler.apply(req)
+    return {"status": "ok", "message": msg}
+
+
+@app.post("/restore")
+async def restore():
+    global _demo_running, _demo_phase
+    simulator.restore()
+    alert_manager._alerts.clear()
+    alert_manager._last_fired.clear()
+    autonomous_engine.decision_log.clear()
+    _demo_running = False
+    _demo_phase = None
+    return {"status": "ok", "message": "System restored to nominal conditions"}
+
+
+# --- Ontology ---
+
+@app.get("/ontology")
+async def get_ontology():
+    return ontology_store.get_ontology()
+
+
+@app.get("/ontology/propagation")
+async def get_propagation(alert_id: str = Query(...)):
+    return ontology_store.get_propagation(alert_id, alert_manager.alerts)
+
+
+# --- Alerts ---
+
+@app.get("/alerts")
+async def get_alerts(limit: int = Query(50, ge=1, le=200)):
+    alerts = alert_manager.alerts
+    return alerts[-limit:]
+
+
+# --- Reasoning ---
+
+class ReasoningRequest(BaseModel):
+    query: str = ""
+
+
+@app.post("/reasoning")
+async def trigger_reasoning(req: Optional[ReasoningRequest] = None):
+    state = simulator.get_state()
+    user_query = (req.query.strip() if req and req.query else None) or None
+    loop = asyncio.get_event_loop()
+    result = await loop.run_in_executor(
+        None, reasoning_engine.analyze,
+        state, None, "MANUAL", None, user_query,
+    )
+    return result
+
+
+# --- Chat ---
+
+class ChatMessageRequest(BaseModel):
+    content: str
+
+
+@app.get("/chat/threads")
+async def list_chat_threads():
+    return chat_store.list_threads()
+
+
+@app.post("/chat/threads")
+async def create_chat_thread():
+    thread = chat_store.create_thread()
+    return {"id": thread.id, "title": thread.title, "created_at": thread.created_at.isoformat()}
+
+
+@app.get("/chat/threads/{thread_id}/messages")
+async def get_chat_messages(thread_id: str):
+    messages = chat_store.get_messages(thread_id)
+    if messages is None:
+        return {"error": "Thread not found"}
+    return [m.model_dump(mode="json") for m in messages]
+
+
+@app.post("/chat/threads/{thread_id}/messages")
+async def send_chat_message(thread_id: str, req: ChatMessageRequest):
+    thread = chat_store.get_thread(thread_id)
+    if thread is None:
+        return {"error": "Thread not found"}
+
+    user_msg = ChatMessage(role="user", content=req.content)
+    chat_store.add_message(thread_id, user_msg)
+
+    state = simulator.get_state()
+    history = chat_store.get_messages(thread_id) or []
+    loop = asyncio.get_event_loop()
+    assistant_msg = await loop.run_in_executor(
+        None, chat_engine.respond, req.content, history[:-1], state,
+    )
+    chat_store.add_message(thread_id, assistant_msg)
+
+    return assistant_msg.model_dump(mode="json")
+
+
+@app.delete("/chat/threads/{thread_id}")
+async def delete_chat_thread(thread_id: str):
+    if chat_store.delete_thread(thread_id):
+        return {"status": "ok"}
+    return {"error": "Thread not found"}
+
+
+# --- Decision Engine ---
+
+@app.get("/mode")
+async def get_mode():
+    return {"mode": autonomous_engine.mode.value}
+
+
+class ModeRequest(BaseModel):
+    mode: str
+
+
+@app.post("/mode")
+async def set_mode(req: ModeRequest):
+    try:
+        autonomous_engine.mode = AutonomousMode(req.mode)
+        return {"status": "ok", "mode": autonomous_engine.mode.value}
+    except ValueError:
+        return {"status": "error", "message": f"Invalid mode: {req.mode}"}
+
+
+@app.get("/decisions/pending")
+async def get_pending_decisions():
+    return autonomous_engine.decision_log.get_pending()
+
+
+@app.get("/decisions/log")
+async def get_decision_log(limit: int = Query(100, ge=1, le=500)):
+    return autonomous_engine.decision_log.get_all(limit)
+
+
+@app.post("/decisions/{decision_id}/approve")
+async def approve_decision(decision_id: str):
+    success = autonomous_engine.approve(decision_id)
+    if success:
+        return {"status": "ok", "message": "Decision approved and executed"}
+    return {"status": "error", "message": "Decision not found or not pending"}
+
+
+@app.post("/decisions/{decision_id}/reject")
+async def reject_decision(decision_id: str):
+    success = autonomous_engine.reject(decision_id)
+    if success:
+        return {"status": "ok", "message": "Decision rejected"}
+    return {"status": "error", "message": "Decision not found or not pending"}
+
+
+@app.post("/decisions/{decision_id}/revert")
+async def revert_decision(decision_id: str):
+    success = autonomous_engine.revert(decision_id)
+    if success:
+        return {"status": "ok", "message": "Decision reverted"}
+    return {"status": "error", "message": "Cannot revert — not executed or not reversible"}
+
+
+# --- Generators ---
+
+@app.get("/generators")
+async def get_generators():
+    return [g.to_dict() for g in simulator.generators]
+
+
+# --- Demo ---
+
+@app.post("/demo")
+async def run_demo():
+    if _demo_running:
+        return {"status": "error", "message": "Demo is already running"}
+    asyncio.create_task(run_demo_scenario())
+    return {"status": "ok", "message": "Demo scenario started"}
+
+
+@app.get("/demo/status")
+async def demo_status():
+    return {"active": _demo_running, "phase": _demo_phase}
+
+
+# --- Health ---
+
+@app.get("/health")
+async def health():
+    return {
+        "status": "healthy",
+        "sim_time_s": simulator.sim_time,
+        "mode": autonomous_engine.mode.value,
+        "pending_decisions": len(autonomous_engine.decision_log.get_pending()),
+    }

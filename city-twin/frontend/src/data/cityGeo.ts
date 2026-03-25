@@ -1,0 +1,169 @@
+/**
+ * Geographic coordinates for all 80 buses in a fictional city layout.
+ *
+ * Coordinate space: 900 x 700 SVG viewport.
+ *
+ * Layout concept:
+ *   - Nuclear plant: far northwest
+ *   - Hydro dam: north, near river
+ *   - Gas CCGT: central-west
+ *   - Wind farms: east coast
+ *   - Solar farm: south
+ *   - Industrial zones: southwest waterfront
+ *   - CBD: center
+ *   - Residential: spread around
+ *   - Airport: southeast
+ *   - Port: southwest
+ *   - University/Hospital: mid-east
+ */
+
+export interface BusGeo {
+  id: number;
+  x: number;
+  y: number;
+  district: string;
+}
+
+export const BUS_GEO: BusGeo[] = [
+  // === 400 kV buses (1-5) — major generation stations at city edges ===
+  { id: 1, x: 120, y: 80, district: "Nuclear Zone" },
+  { id: 2, x: 400, y: 55, district: "Hydro Dam" },
+  { id: 3, x: 200, y: 320, district: "Gas Plant Central" },
+  { id: 4, x: 790, y: 180, district: "Wind Coast" },
+  { id: 5, x: 500, y: 620, district: "Solar Fields" },
+
+  // === 132 kV buses (6-25) — substations and smaller generators ===
+  { id: 6, x: 180, y: 180, district: "Industrial North" },
+  { id: 7, x: 320, y: 150, district: "Industrial East" },
+  { id: 8, x: 260, y: 260, district: "Gas Peaker 1" },
+  { id: 9, x: 150, y: 280, district: "Steel Works" },
+  { id: 10, x: 300, y: 380, district: "Gas Peaker 2" },
+  { id: 11, x: 120, y: 400, district: "Cement Factory" },
+  { id: 12, x: 340, y: 100, district: "Small Hydro" },
+  { id: 13, x: 100, y: 510, district: "Port & Harbour" },
+  { id: 14, x: 220, y: 440, district: "Rail Hub" },
+  { id: 15, x: 740, y: 260, district: "Wind Farm 2" },
+  { id: 16, x: 580, y: 200, district: "Data Centre" },
+  { id: 17, x: 680, y: 380, district: "Airport" },
+  { id: 18, x: 600, y: 540, district: "Solar Farm 2" },
+  { id: 19, x: 180, y: 560, district: "Chemical Plant" },
+  { id: 20, x: 400, y: 480, district: "Gas Peaker 3" },
+  { id: 21, x: 540, y: 100, district: "Water Treatment" },
+  { id: 22, x: 820, y: 320, district: "Wind Farm 3" },
+  { id: 23, x: 620, y: 300, district: "University" },
+  { id: 24, x: 560, y: 360, district: "Hospital" },
+  { id: 25, x: 440, y: 160, district: "City Ring North" },
+
+  // === 33 kV buses (26-80) — distribution, residential, commercial ===
+  { id: 26, x: 250, y: 130, district: "Residential NW" },
+  { id: 27, x: 370, y: 110, district: "Residential NE" },
+  { id: 28, x: 300, y: 180, district: "Residential N" },
+  { id: 29, x: 420, y: 270, district: "CBD Core" },
+  { id: 30, x: 480, y: 250, district: "CBD East" },
+  { id: 31, x: 360, y: 280, district: "CBD West" },
+  { id: 32, x: 200, y: 500, district: "Residential SW" },
+  { id: 33, x: 350, y: 540, district: "Residential SE" },
+  { id: 34, x: 280, y: 520, district: "Residential S" },
+  { id: 35, x: 420, y: 330, district: "Shopping District" },
+  { id: 36, x: 500, y: 310, district: "Office Park Alpha" },
+  { id: 37, x: 540, y: 270, district: "Office Park Beta" },
+  { id: 38, x: 280, y: 350, district: "Residential Inner W" },
+  { id: 39, x: 380, y: 340, district: "Residential Inner E" },
+  { id: 40, x: 160, y: 360, district: "Light Industry W" },
+  { id: 41, x: 240, y: 400, district: "Light Industry E" },
+  { id: 42, x: 140, y: 450, district: "Suburb Greenfield" },
+  { id: 43, x: 320, y: 460, district: "Suburb Riverside" },
+  { id: 44, x: 260, y: 480, district: "Suburb Hilltop" },
+  { id: 45, x: 380, y: 500, district: "Suburb Lakeside" },
+  { id: 46, x: 100, y: 580, district: "Commercial Marina" },
+  { id: 47, x: 480, y: 380, district: "Tech Park South" },
+  { id: 48, x: 510, y: 340, district: "Tech Park North" },
+  { id: 49, x: 450, y: 420, district: "Residential Midtown" },
+  { id: 50, x: 520, y: 430, district: "Residential Uptown" },
+  { id: 51, x: 460, y: 350, district: "Government Quarter" },
+  { id: 52, x: 350, y: 410, district: "Transport Hub Central" },
+  { id: 53, x: 400, y: 440, district: "Transport Hub South" },
+  { id: 54, x: 580, y: 400, district: "Hospital District" },
+  { id: 55, x: 620, y: 340, district: "University District" },
+  { id: 56, x: 300, y: 560, district: "Suburb Old Town" },
+  { id: 57, x: 420, y: 560, district: "Suburb Newlands" },
+  { id: 58, x: 230, y: 550, district: "Residential West End" },
+  { id: 59, x: 480, y: 520, district: "Residential East End" },
+  { id: 60, x: 540, y: 480, district: "Commercial Waterfront" },
+  { id: 61, x: 640, y: 440, district: "Suburb Heights" },
+  { id: 62, x: 660, y: 500, district: "Suburb Valley" },
+  { id: 63, x: 700, y: 460, district: "Suburb Meadows" },
+  { id: 64, x: 600, y: 460, district: "Industrial Light S" },
+  { id: 65, x: 560, y: 160, district: "Commercial Strip N" },
+  { id: 66, x: 480, y: 130, district: "Residential Garden" },
+  { id: 67, x: 520, y: 180, district: "Residential Park" },
+  { id: 68, x: 640, y: 220, district: "Suburb Orchard" },
+  { id: 69, x: 700, y: 280, district: "Suburb Pineview" },
+  { id: 70, x: 760, y: 400, district: "Suburb Maplewood" },
+  { id: 71, x: 340, y: 220, district: "Junction A" },
+  { id: 72, x: 350, y: 370, district: "Junction B" },
+  { id: 73, x: 500, y: 460, district: "Junction C" },
+  { id: 74, x: 680, y: 440, district: "Junction D" },
+  { id: 75, x: 440, y: 540, district: "Junction E" },
+  { id: 76, x: 340, y: 600, district: "Suburb Cedarwood" },
+  { id: 77, x: 400, y: 620, district: "Suburb Birchwood" },
+  { id: 78, x: 460, y: 600, district: "Suburb Ashfield" },
+  { id: 79, x: 520, y: 580, district: "Suburb Elmwood" },
+  { id: 80, x: 560, y: 620, district: "Suburb Willowdale" },
+];
+
+export const BUS_GEO_MAP = new Map(BUS_GEO.map((b) => [b.id, b]));
+
+/** District regions for the map background (approximate polygons). */
+export interface DistrictRegion {
+  name: string;
+  color: string;
+  points: [number, number][];
+}
+
+export const DISTRICTS: DistrictRegion[] = [
+  {
+    name: "Nuclear Zone",
+    color: "#7c3aed",
+    points: [[60, 40], [180, 40], [180, 130], [60, 130]],
+  },
+  {
+    name: "Hydro Dam",
+    color: "#1a6cf5",
+    points: [[340, 20], [470, 20], [470, 90], [340, 90]],
+  },
+  {
+    name: "Industrial",
+    color: "#464c58",
+    points: [[80, 150], [240, 150], [240, 310], [80, 310]],
+  },
+  {
+    name: "CBD",
+    color: "#f0a500",
+    points: [[340, 240], [520, 240], [520, 380], [340, 380]],
+  },
+  {
+    name: "Wind Coast",
+    color: "#00c97a",
+    points: [[700, 140], [860, 140], [860, 360], [700, 360]],
+  },
+  {
+    name: "Solar Fields",
+    color: "#f0a500",
+    points: [[420, 580], [620, 580], [620, 660], [420, 660]],
+  },
+  {
+    name: "Port",
+    color: "#363b47",
+    points: [[50, 480], [160, 480], [160, 610], [50, 610]],
+  },
+  {
+    name: "Airport",
+    color: "#363b47",
+    points: [[630, 340], [730, 340], [730, 420], [630, 420]],
+  },
+];
+
+/** Decorative river path through the city. */
+export const RIVER_PATH =
+  "M 350,0 Q 380,100 360,200 Q 340,300 380,400 Q 400,500 350,600 Q 330,680 340,700";

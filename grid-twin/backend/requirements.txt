@@ -1,0 +1,9 @@
+fastapi
+uvicorn[standard]
+jax[cpu]
+jaxlib
+numpy
+networkx
+pydantic>=2.0
+anthropic
+python-dotenv

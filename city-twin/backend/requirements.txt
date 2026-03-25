@@ -1,0 +1,8 @@
+fastapi
+uvicorn[standard]
+numpy
+networkx
+pandapower
+pydantic>=2.0
+openai
+python-dotenv

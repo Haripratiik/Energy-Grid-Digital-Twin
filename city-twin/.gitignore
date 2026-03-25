@@ -1,0 +1,53 @@
+# ── Environment & secrets ──
+.env
+.env.local
+.env.*.local
+*.env
+
+# ── Python ──
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+*.egg
+.venv/
+venv/
+env/
+.Python
+
+# ── Node / Frontend ──
+node_modules/
+frontend/dist/
+frontend/.vite/
+*.tsbuildinfo
+
+# ── IDE ──
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# ── OS ──
+desktop.ini
+ehthumbs.db
+
+# ── Logs ──
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# ── Coverage & testing ──
+.coverage
+htmlcov/
+.pytest_cache/
+.mypy_cache/
+
+# ── pandapower cache ──
+*.p
+*.pkl
