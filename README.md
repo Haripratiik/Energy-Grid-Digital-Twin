@@ -313,7 +313,3 @@ A simplified IEEE 9-bus test system — the standard benchmark used in power sys
 - CORS is configured for `localhost:5173` only
 
 ---
-
-## License
-
-MIT
