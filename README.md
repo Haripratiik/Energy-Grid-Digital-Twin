@@ -206,6 +206,24 @@ python -m physics.perf.benchmark --jax
 contingencies on a 2869-bus grid screened in 152 ms** (14 ms with the optional
 JAX-jitted path), agreeing with brute-force re-solves to ~1e-10.
 
+## State Estimation & Bad-Data Detection
+
+A control room never measures the true state — it estimates it from a redundant,
+noisy, occasionally-faulty measurement set. [`physics/state_estimation.py`](city-twin/backend/physics/state_estimation.py)
+implements the EMS-standard **weighted-least-squares state estimator** (state =
+bus angles; measurements = branch flows + bus injections) with **χ² bad-data
+detection** and **largest-normalized-residual** identification.
+
+```bash
+cd city-twin/backend
+python -m physics.state_estimation
+```
+
+On IEEE-118 (measurement redundancy 2.6×): the estimate **denoises** (flow RMSE
+0.008 pu vs 0.02 pu sensor noise); clean data passes the χ² test; and a single
+injected gross error is both **detected** (J = 636 ≫ 234 threshold) and
+**localized to the exact measurement** (normalized residual 21).
+
 ## Digital Twin — Real-Time State Estimation
 
 The defining property of a digital twin is a model kept *synchronized* to a

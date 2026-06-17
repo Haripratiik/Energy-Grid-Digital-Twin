@@ -299,6 +299,21 @@ cascade paths.
 > ui-ux-pro-max chart rules (tooltips, legends, accessible colors, subtle grid,
 > tabular figures, reduced-motion).
 
+## Milestone 10 — WLS State Estimation & Bad-Data Detection — ✅ SHIPPED
+
+> The other half of "digital twin": recover the true state from a redundant,
+> noisy, occasionally-faulty measurement set — the defining EMS function.
+> [`physics/state_estimation.py`](../city-twin/backend/physics/state_estimation.py):
+> linear (DC) WLS estimation (state = bus angles; measurements = branch flows +
+> bus injections), with **chi-squared detection** and **largest-normalized-
+> residual identification** (detect-then-identify). On IEEE-118 (redundancy 2.6):
+> the estimate *denoises* (flow RMSE 0.008 vs 0.02 sensor noise), clean data
+> passes the χ² test, and a single injected gross error is both detected (J=636 ≫
+> 234) and localized to the exact measurement (normalized residual 21). Reuses
+> the DC model from M8. `python -m physics.state_estimation`. Tested in
+> [tests/test_state_estimation.py](../city-twin/backend/tests/test_state_estimation.py)
+> (7 passing). Full suite: 81.
+
 ## Sequencing & why this order
 
 ```
