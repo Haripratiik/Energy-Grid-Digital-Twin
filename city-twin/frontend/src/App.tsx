@@ -1,9 +1,7 @@
-import { useState } from "react";
-import {
-  Panel,
-  Group,
-  Separator,
-} from "react-resizable-panels";
+import { useCallback, useState, type ReactNode } from "react";
+import GridLayout, { WidthProvider, type Layout } from "react-grid-layout";
+import "react-grid-layout/css/styles.css";
+import "react-resizable/css/styles.css";
 import { useGridStream } from "./hooks/useGridStream";
 import { useOntology } from "./hooks/useOntology";
 import { useDecisions } from "./hooks/useDecisions";
@@ -18,38 +16,67 @@ import DecisionLog from "./components/DecisionLog";
 import ContingencyPanel from "./components/ContingencyPanel";
 import TwinView from "./components/TwinView";
 
-function ResizeHandleH() {
-  return (
-    <Separator className="group relative w-[5px] flex items-center justify-center hover:bg-accent-blue/10 transition-colors">
-      <div className="w-[1px] h-full bg-border-strong group-hover:bg-accent-blue/50 transition-colors" />
-    </Separator>
-  );
+const RGL = WidthProvider(GridLayout);
+const LAYOUT_KEY = "gridtwin.layout.v1";
+
+const DEFAULT_LAYOUT: Layout[] = [
+  { i: "topology", x: 0, y: 0, w: 4, h: 20, minW: 2, minH: 8 },
+  { i: "ontology", x: 4, y: 0, w: 3, h: 10, minW: 2, minH: 5 },
+  { i: "contingency", x: 4, y: 10, w: 3, h: 10, minW: 2, minH: 5 },
+  { i: "operator", x: 7, y: 0, w: 5, h: 12, minW: 3, minH: 6 },
+  { i: "decisions", x: 7, y: 12, w: 5, h: 8, minW: 3, minH: 5 },
+  { i: "genmix", x: 0, y: 20, w: 4, h: 6, minW: 2, minH: 4 },
+  { i: "log", x: 4, y: 20, w: 8, h: 6, minW: 3, minH: 4 },
+];
+
+function loadLayout(): Layout[] {
+  try {
+    const raw = localStorage.getItem(LAYOUT_KEY);
+    if (raw) return JSON.parse(raw) as Layout[];
+  } catch {
+    /* fall through to default */
+  }
+  return DEFAULT_LAYOUT;
 }
 
-function ResizeHandleV() {
+function PanelCard({ children }: { children: ReactNode }) {
   return (
-    <Separator className="group relative h-[5px] flex items-center justify-center hover:bg-accent-blue/10 transition-colors">
-      <div className="h-[1px] w-full bg-border-strong group-hover:bg-accent-blue/50 transition-colors" />
-    </Separator>
+    <div className="h-full flex flex-col border border-border-strong bg-bg-secondary overflow-hidden">
+      <div
+        className="panel-drag shrink-0 h-4 flex items-center justify-center bg-bg-tertiary border-b border-border-subtle cursor-grab active:cursor-grabbing select-none hover:bg-bg-elevated transition-colors"
+        title="Drag to move · resize from the corner"
+      >
+        <span className="font-mono text-[10px] text-text-muted leading-none tracking-[0.3em]">⠿⠿⠿</span>
+      </div>
+      <div className="flex-1 min-h-0 overflow-hidden">{children}</div>
+    </div>
   );
 }
 
 export default function App() {
   const { gridState, connectionStatus } = useGridStream();
-  const { ontology, fetchPropagation } = useOntology(
-    gridState?.ontology_dirty ?? false,
-  );
-  const { pending, log, mode, approve, reject, revert, toggleMode } =
-    useDecisions();
+  const { ontology, fetchPropagation } = useOntology(gridState?.ontology_dirty ?? false);
+  const { pending, log, mode, approve, reject, revert, toggleMode } = useDecisions();
   const demo = useDemoStatus();
 
-  const [highlightedAsset, setHighlightedAsset] = useState<string | null>(
-    null,
-  );
+  const [highlightedAsset, setHighlightedAsset] = useState<string | null>(null);
   const [twinOpen, setTwinOpen] = useState(false);
-  // "operations" = clean real-time monitoring (no self-inflicted faults);
-  // "testing" = sandbox with fault injection + demo scenarios.
   const [appMode, setAppMode] = useState<"operations" | "testing">("operations");
+  const [layout, setLayout] = useState<Layout[]>(loadLayout);
+
+  const onLayoutChange = useCallback((next: Layout[]) => {
+    setLayout(next);
+    try {
+      localStorage.setItem(LAYOUT_KEY, JSON.stringify(next));
+    } catch {
+      /* ignore quota errors */
+    }
+  }, []);
+
+  const resetLayout = useCallback(() => {
+    localStorage.removeItem(LAYOUT_KEY);
+    setLayout(DEFAULT_LAYOUT.map((l) => ({ ...l })));
+  }, []);
 
   return (
     <div className="h-full w-full flex flex-col bg-bg-primary overflow-hidden relative">
@@ -61,60 +88,54 @@ export default function App() {
         onToggleMode={toggleMode}
         onOpenTwin={() => setTwinOpen(true)}
         appMode={appMode}
-        onToggleAppMode={() =>
-          setAppMode((m) => (m === "operations" ? "testing" : "operations"))
-        }
+        onToggleAppMode={() => setAppMode((m) => (m === "operations" ? "testing" : "operations"))}
+        onResetLayout={resetLayout}
       />
 
       <TwinView open={twinOpen} onClose={() => setTwinOpen(false)} />
 
-      <Group orientation="horizontal" className="flex-1 min-h-0">
-        {/* Panel 1 — Grid Topology (force graph ↔ geographic map) */}
-        <Panel defaultSize={30} minSize={15}>
-          <GridTopology
-            gridState={gridState}
-            highlightedAsset={highlightedAsset}
-            testingMode={appMode === "testing"}
-          />
-        </Panel>
-
-        <ResizeHandleH />
-
-        {/* Panel 2 — Foundry Ontology */}
-        <Panel defaultSize={20} minSize={10}>
-          <OntologyGraph
-            ontology={ontology}
-            gridState={gridState}
-            fetchPropagation={fetchPropagation}
-          />
-        </Panel>
-
-        <ResizeHandleH />
-
-        {/* Panel 3 — Operator Console + N-1 Contingency Analysis */}
-        <Panel defaultSize={25} minSize={15}>
-          <Group orientation="vertical">
-            <Panel defaultSize={58} minSize={20}>
-              <OperatorConsole
+      <div className="flex-1 min-h-0 overflow-auto p-1.5">
+        <RGL
+          className="layout"
+          layout={layout}
+          cols={12}
+          rowHeight={28}
+          margin={[6, 6]}
+          containerPadding={[0, 0]}
+          draggableHandle=".panel-drag"
+          onLayoutChange={onLayoutChange}
+          compactType="vertical"
+        >
+          <div key="topology">
+            <PanelCard>
+              <GridTopology
                 gridState={gridState}
-                onAssetClick={setHighlightedAsset}
+                highlightedAsset={highlightedAsset}
+                testingMode={appMode === "testing"}
               />
-            </Panel>
-
-            <ResizeHandleV />
-
-            <Panel defaultSize={42} minSize={15}>
+            </PanelCard>
+          </div>
+          <div key="ontology">
+            <PanelCard>
+              <OntologyGraph
+                ontology={ontology}
+                gridState={gridState}
+                fetchPropagation={fetchPropagation}
+              />
+            </PanelCard>
+          </div>
+          <div key="contingency">
+            <PanelCard>
               <ContingencyPanel summary={gridState?.contingency} />
-            </Panel>
-          </Group>
-        </Panel>
-
-        <ResizeHandleH />
-
-        {/* Panel 4 — Decisions + Gen Mix + Audit */}
-        <Panel defaultSize={25} minSize={12}>
-          <Group orientation="vertical">
-            <Panel defaultSize={55} minSize={20}>
+            </PanelCard>
+          </div>
+          <div key="operator">
+            <PanelCard>
+              <OperatorConsole gridState={gridState} onAssetClick={setHighlightedAsset} />
+            </PanelCard>
+          </div>
+          <div key="decisions">
+            <PanelCard>
               <DecisionQueue
                 pending={pending}
                 mode={mode}
@@ -122,25 +143,23 @@ export default function App() {
                 onReject={reject}
                 onAssetClick={setHighlightedAsset}
               />
-            </Panel>
-
-            <ResizeHandleV />
-
-            <Panel defaultSize={15} minSize={8}>
+            </PanelCard>
+          </div>
+          <div key="genmix">
+            <PanelCard>
               <GeneratorMix
                 generators={gridState?.generators ?? []}
                 totalLoad={gridState?.total_load_mw ?? 0}
               />
-            </Panel>
-
-            <ResizeHandleV />
-
-            <Panel defaultSize={30} minSize={10}>
+            </PanelCard>
+          </div>
+          <div key="log">
+            <PanelCard>
               <DecisionLog decisions={log} onRevert={revert} />
-            </Panel>
-          </Group>
-        </Panel>
-      </Group>
+            </PanelCard>
+          </div>
+        </RGL>
+      </div>
     </div>
   );
 }

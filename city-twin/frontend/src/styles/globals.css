@@ -112,3 +112,32 @@ body,
 .flow-animation {
   animation: flow-dash 1s linear infinite;
 }
+
+/* ── react-grid-layout — dark control-room theme ── */
+.react-grid-item.react-grid-placeholder {
+  background: rgba(45, 122, 246, 0.16) !important;
+  border: 1px dashed rgba(45, 122, 246, 0.7);
+  border-radius: 0;
+  opacity: 1;
+}
+.react-grid-item.react-draggable-dragging,
+.react-grid-item.resizing {
+  z-index: 30;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.55);
+}
+.react-grid-item > .react-resizable-handle {
+  background: none;
+}
+.react-grid-item > .react-resizable-handle::after {
+  content: "";
+  position: absolute;
+  right: 3px;
+  bottom: 3px;
+  width: 7px;
+  height: 7px;
+  border-right: 2px solid #5b6472;
+  border-bottom: 2px solid #5b6472;
+}
+.react-grid-item > .react-resizable-handle:hover::after {
+  border-color: var(--accent-blue);
+}

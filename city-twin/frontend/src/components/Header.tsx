@@ -13,6 +13,7 @@ interface Props {
   onOpenTwin: () => void;
   appMode: "operations" | "testing";
   onToggleAppMode: () => void;
+  onResetLayout: () => void;
 }
 
 function formatSimTime(seconds: number): string {
@@ -62,6 +63,7 @@ export default function Header({
   onOpenTwin,
   appMode,
   onToggleAppMode,
+  onResetLayout,
 }: Props) {
   const testing = appMode === "testing";
   const freq = gridState?.system_frequency_hz ?? 60.0;
@@ -147,6 +149,13 @@ export default function Header({
             title="Digital twin — real-time state estimation (UKF)"
           >
             Digital Twin
+          </button>
+          <button
+            onClick={onResetLayout}
+            className="font-mono text-[10px] px-2.5 py-1.5 uppercase tracking-wider border border-border-strong text-text-secondary hover:bg-bg-elevated transition-colors"
+            title="Reset panel layout to default"
+          >
+            Reset Layout
           </button>
 
           {/* Sandbox controls — testing mode only */}
