@@ -250,6 +250,25 @@ cascade paths.
 > [tests/test_validation.py](../city-twin/backend/tests/test_validation.py)
 > (7 passing). Full suite: 58.
 
+## Milestone 7 — Digital-Twin Synchronization (UKF state estimation) — ✅ SHIPPED
+
+> The literal "digital twin" demonstration and the resume headline. A dual
+> simulator loop ([`twin/`](../city-twin/backend/twin/)): a **physical plant**
+> (ground-truth dynamics + process noise) and a **twin** that sees only noisy,
+> partial rotor-angle measurements and tracks the plant's full state with an
+> **Unscented Kalman Filter**. The process model is a new **classical multi-
+> machine transient-stability model** ([classical_model.py](../city-twin/backend/physics/classical_model.py)
+> — EMF behind X'd, Kron-reduced from the validated IEEE-9), whose oscillation
+> modes land in the 1–2 Hz electromechanical band.
+>
+> Measured: converged angle RMSE 0.0016 rad (below the 0.01 rad sensor noise —
+> the filter *denoises*); unmeasured rotor speeds reconstructed to 0.013 rad/s;
+> tracks under partial observability (2 of 3 angles); NIS ≈ 3 (= #measurements,
+> statistically consistent); and an unmodeled plant event spikes the innovation
+> ~100× for anomaly detection. `python -m twin.demo`. Tested in
+> [tests/test_twin.py](../city-twin/backend/tests/test_twin.py) (10 passing).
+> Full suite: 68.
+
 ## Sequencing & why this order
 
 ```
