@@ -62,6 +62,55 @@ def run(data_dir: str, horizon: int, holdout_family: str | None, seed: int) -> d
     return results
 
 
+def run_overload(data_dir: str, horizon: int, holdout_family: str | None,
+                 seed: int) -> dict[str, ClsMetrics]:
+    """Per-branch overload prediction (edge-level) — the topology-dependent task."""
+    raw = load_dataset(data_dir, horizon=horizon)
+    if holdout_family:
+        train, test = split_by_family(raw, holdout_family)
+    else:
+        train, _, test = split_by_trajectory(raw, seed=seed)
+
+    y_te = test.Y_edge.reshape(-1)
+    results: dict[str, ClsMetrics] = {}
+
+    # 1. persistence: a branch overloaded now is predicted overloaded ahead.
+    results["persistence"] = evaluate(y_te, test.edge_loaded_now.reshape(-1))
+
+    # 2. logistic on per-edge features (local context only).
+    Xtr = train.per_edge_features().reshape(-1, train.per_edge_features().shape[-1])
+    Xte = test.per_edge_features().reshape(-1, test.per_edge_features().shape[-1])
+    sc = Standardizer()
+    Xtr_s = sc.fit_transform(Xtr); Xte_s = sc.transform(Xte)
+    logit = LogisticRegression(seed=seed).fit(Xtr_s, train.Y_edge.reshape(-1))
+    results["logistic"] = evaluate(y_te, logit.predict_proba(Xte_s))
+
+    try:
+        from .world_model import (
+            GraphWorldModel, MLPModel, graph_edge_scores, mlp_scores,
+            train_graph_edges, train_mlp,
+        )
+    except ImportError:
+        print("[torch not available — skipping mlp/gnn]")
+        return results
+
+    # 3. MLP on the same per-edge features (topology-blind).
+    mlp = MLPModel(n_in=Xtr_s.shape[1])
+    train_mlp(mlp, Xtr_s, train.Y_edge.reshape(-1), seed=seed)
+    results["mlp"] = evaluate(y_te, mlp_scores(mlp, Xte_s))
+
+    # 4. GNN edge head (multi-hop topology + action conditioning).
+    gnn = GraphWorldModel(
+        n_node_feat=train.X_node.shape[-1], n_edge_feat=train.X_edge.shape[-1],
+        n_global_feat=train.X_global.shape[-1], n_action_feat=train.X_action.shape[-1],
+    )
+    gnn.set_topology(train.edge_index, n_nodes=train.X_node.shape[1])
+    train_graph_edges(gnn, train, seed=seed)
+    results["gnn"] = evaluate(y_te, graph_edge_scores(gnn, test))
+
+    return results
+
+
 def _print_table(results: dict[str, ClsMetrics]) -> None:
     print(f"\n{'model':<14}{'acc':>8}{'F1':>8}{'AUROC':>8}{'prec':>8}{'recall':>8}{'n':>8}")
     print("-" * 62)
@@ -75,12 +124,16 @@ def main() -> None:
     ap.add_argument("--data", required=True, help="dataset directory of .npz trajectories")
     ap.add_argument("--horizon", type=int, default=20, help="prediction horizon (steps)")
     ap.add_argument("--holdout-family", help="hold out a fault family for the test set")
+    ap.add_argument("--target", choices=["security", "overload"], default="security",
+                    help="security = global secure-ahead; overload = per-branch overload")
     ap.add_argument("--seed", type=int, default=0)
     args = ap.parse_args()
 
-    results = run(args.data, args.horizon, args.holdout_family, args.seed)
+    fn = run_overload if args.target == "overload" else run
+    results = fn(args.data, args.horizon, args.holdout_family, args.seed)
     split = f"held-out family={args.holdout_family}" if args.holdout_family else "by-trajectory split"
-    print(f"\nGridWorld security prediction (horizon={args.horizon} steps, {split})")
+    label = "per-branch overload" if args.target == "overload" else "security"
+    print(f"\nGridWorld {label} prediction (horizon={args.horizon} steps, {split})")
     _print_table(results)
 
 

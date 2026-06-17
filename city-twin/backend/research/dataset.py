@@ -20,6 +20,9 @@ import numpy as np
 
 # Index of n_violations within the global feature vector (see trajectory.py).
 _N_VIOL_IDX = 5
+# Index of loading_frac within the edge feature vector (see trajectory.py).
+_EDGE_LOADING_IDX = 3
+_OVERLOAD_FRAC = 1.0   # loading_frac > 1.0 == past thermal limit
 
 
 @dataclass
@@ -34,6 +37,10 @@ class Samples:
     traj_id: np.ndarray     # (N,)  int trajectory index
     edge_index: np.ndarray  # (2, n_edges) shared topology
 
+    # Edge-level target (overload prediction); None for the security-only task.
+    Y_edge: np.ndarray | None = None         # (N, n_edges) 1 = overloaded at t+H
+    edge_loaded_now: np.ndarray | None = None  # (N, n_edges) 1 = overloaded at t
+
     def __len__(self) -> int:
         return len(self.y)
 
@@ -44,7 +51,24 @@ class Samples:
             y=self.y[idx], secure_now=self.secure_now[idx],
             family=self.family[idx], traj_id=self.traj_id[idx],
             edge_index=self.edge_index,
+            Y_edge=None if self.Y_edge is None else self.Y_edge[idx],
+            edge_loaded_now=None if self.edge_loaded_now is None else self.edge_loaded_now[idx],
         )
+
+    def per_edge_features(self) -> np.ndarray:
+        """Per-edge feature tensor (N, n_edges, D) for non-graph edge baselines.
+
+        Each edge gets its own features + both endpoint node features + the
+        graph-global and action context. A flat model sees only this local
+        context — no multi-hop topology, which is the point of the comparison.
+        """
+        src, dst = self.edge_index[0], self.edge_index[1]
+        node_src = self.X_node[:, src, :]          # (N, E, Fn)
+        node_dst = self.X_node[:, dst, :]
+        n, e = node_src.shape[0], node_src.shape[1]
+        glob = np.broadcast_to(self.X_global[:, None, :], (n, e, self.X_global.shape[1]))
+        act = np.broadcast_to(self.X_action[:, None, :], (n, e, self.X_action.shape[1]))
+        return np.concatenate([self.X_edge, node_src, node_dst, glob, act], axis=-1).astype(np.float32)
 
     def flat(self) -> np.ndarray:
         """Non-graph feature vector: global + action + node/edge aggregates."""
@@ -67,6 +91,7 @@ def load_dataset(data_dir: str, horizon: int = 20) -> Samples:
         raise FileNotFoundError(f"No .npz trajectories found in {data_dir!r}")
 
     xn, xe, xg, xa, ys, sn, fam, tid = ([] for _ in range(8))
+    ye, eln = [], []   # edge-overload label at t+H, edge overloaded now
     edge_index = None
 
     for traj_idx, path in enumerate(paths):
@@ -88,10 +113,12 @@ def load_dataset(data_dir: str, horizon: int = 20) -> Samples:
         node = d["node_features"]
         edge = d["edge_features"]
         act = d["actions"]
+        edge_overloaded = (edge[:, :, _EDGE_LOADING_IDX] > _OVERLOAD_FRAC).astype(np.float32)
 
         for t in range(T - horizon):
             xn.append(node[t]); xe.append(edge[t]); xg.append(gf[t]); xa.append(act[t])
             ys.append(secure[t + horizon]); sn.append(secure[t])
+            ye.append(edge_overloaded[t + horizon]); eln.append(edge_overloaded[t])
             fam.append(family); tid.append(traj_idx)
 
     if not ys:
@@ -103,6 +130,7 @@ def load_dataset(data_dir: str, horizon: int = 20) -> Samples:
         y=np.asarray(ys, np.float32), secure_now=np.asarray(sn, np.float32),
         family=np.asarray(fam, dtype=object), traj_id=np.asarray(tid, np.int64),
         edge_index=edge_index,
+        Y_edge=np.asarray(ye, np.float32), edge_loaded_now=np.asarray(eln, np.float32),
     )
 
 

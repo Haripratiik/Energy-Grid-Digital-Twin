@@ -96,6 +96,18 @@ def test_flat_feature_vector_is_2d(synthetic_dir):
     assert flat.ndim == 2 and flat.shape[0] == len(s)
 
 
+def test_edge_labels_and_features(synthetic_dir):
+    s = load_dataset(synthetic_dir, horizon=10)
+    assert s.Y_edge.shape == (len(s), N_EDGES)
+    assert s.edge_loaded_now.shape == (len(s), N_EDGES)
+    assert set(np.unique(s.Y_edge)) <= {0.0, 1.0}
+    pe = s.per_edge_features()
+    assert pe.shape[:2] == (len(s), N_EDGES)
+    # Per-edge feature = edge + 2*node + global + action dims.
+    expected = len(EDGE_FEATURES) + 2 * len(NODE_FEATURES) + len(GLOBAL_FEATURES) + 4
+    assert pe.shape[2] == expected
+
+
 # --- metrics ---------------------------------------------------------------
 
 def test_metrics_perfect_classifier():
@@ -136,13 +148,18 @@ def _synthetic_samples(n: int, seed: int = 0) -> Samples:
     secure_now = (viol == 0).astype(np.float32)
     # Label: secure-ahead correlates with current security (learnable signal).
     y = ((viol == 0) ^ (rng.random(n) < 0.1)).astype(np.float32)
+    edge = rng.normal(size=(n, N_EDGES, len(EDGE_FEATURES))).astype(np.float32)
+    # Edge overload label: learnable from the edge's loading channel (index 3).
+    Y_edge = (edge[:, :, 3] > 0.5).astype(np.float32)
+    edge_loaded_now = (edge[:, :, 3] > 0.8).astype(np.float32)
     return Samples(
         X_node=rng.normal(size=(n, N_NODES, len(NODE_FEATURES))).astype(np.float32),
-        X_edge=rng.normal(size=(n, N_EDGES, len(EDGE_FEATURES))).astype(np.float32),
+        X_edge=edge,
         X_global=glob, X_action=rng.normal(size=(n, 4)).astype(np.float32),
         y=y, secure_now=secure_now,
         family=np.array(["syn"] * n, dtype=object),
         traj_id=np.zeros(n, dtype=np.int64), edge_index=EDGE_INDEX,
+        Y_edge=Y_edge, edge_loaded_now=edge_loaded_now,
     )
 
 
@@ -156,6 +173,26 @@ def test_gnn_trains_and_predicts_signal():
     m = evaluate(test.y, bundle.scores(test))
     assert 0.0 <= m.auroc <= 1.0
     assert m.auroc > 0.7, f"GNN should learn the synthetic signal (AUROC={m.auroc})"
+
+
+def test_gnn_edge_head_predicts_overload():
+    pytest.importorskip("torch")
+    from research.world_model import (
+        GraphWorldModel, graph_edge_scores, train_graph_edges,
+    )
+
+    train = _synthetic_samples(250, seed=1)
+    test = _synthetic_samples(120, seed=2)
+    gnn = GraphWorldModel(
+        n_node_feat=len(NODE_FEATURES), n_edge_feat=len(EDGE_FEATURES),
+        n_global_feat=len(GLOBAL_FEATURES), n_action_feat=4,
+    )
+    gnn.set_topology(EDGE_INDEX, n_nodes=N_NODES)
+    train_graph_edges(gnn, train, seed=0, epochs=30)
+    scores = graph_edge_scores(gnn, test)
+    assert scores.shape == (len(test) * N_EDGES,)
+    m = evaluate(test.Y_edge.reshape(-1), scores)
+    assert m.auroc > 0.7, f"edge head should learn the synthetic signal (AUROC={m.auroc})"
 
 
 def test_learned_controller_runs_in_harness():
