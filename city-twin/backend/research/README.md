@@ -125,6 +125,31 @@ strong baselines are hard to beat here, the neural nets need more data/regular-
 isation to generalize, and the graph structure helps *relatively* exactly where
 the theory predicts.
 
+### Closing the loop: control (`research.control_eval`)
+
+The ultimate question — does the learned model support *action*? We wrap the
+trained security model as a `LearnedController` (counterfactual planner: score
+each candidate action by predicted P(secure ahead), pick the best) and run it
+head-to-head against the baselines in the simulator, across all six scenarios:
+
+| controller | mean cost | wins |
+|---|---|---|
+| learned | 3365.6 | 1/6 |
+| do_nothing | 3365.7 | 3/6 |
+| greedy_rule | 3538.2 | 2/6 |
+
+**Interpretation.** The learned planner behaves almost identically to do-nothing:
+its global security model can't confidently predict that an intervention will
+*improve* future security, so it defaults to `NO_OP`. That has an upside — it
+avoids `greedy`'s wasteful over-shedding on the unrecoverable line/compound
+faults — but a decisive downside: it **misses the `trafo_trip` recovery** that
+`greedy` achieves (cost 6539 vs 2032), because it never predicts the shedding
+action will help. The lesson is precise and motivates the roadmap above: a
+control-useful world model must predict action *effects on specific
+constraints* (the per-branch overload target), not a single global secure/
+insecure bit. The loop is closed and measured — the result honestly bounds what
+this model can do for control today.
+
 ## Where the GNN should earn its keep (future work)
 
 The per-branch overload task (above) already moves to a topology-structured

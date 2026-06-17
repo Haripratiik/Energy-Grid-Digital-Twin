@@ -214,3 +214,23 @@ def test_learned_controller_runs_in_harness():
     res = run_scenario(scen, controller)
     assert res.metrics.n_steps > 0
     assert res.metrics.controller == "learned"
+
+
+def test_control_loop_comparison_runs():
+    pytest.importorskip("torch")
+    from research.control_eval import compare_controllers
+    from research.controller import fit_graph_bundle
+    from eval.scenario import Scenario, ScenarioEvent
+    from physics.fault_handler import FaultType
+
+    bundle = fit_graph_bundle(_synthetic_samples(200, seed=4), seed=0, epochs=10)
+    scen = Scenario(
+        id="t", family="gen_dropout", seed=6, settle_s=2.0, duration_s=6.0,
+        events=[ScenarioEvent(at_s=2.0, fault_type=FaultType.GEN_DROPOUT,
+                              target_rid="ri.city-grid.main.generator.3")],
+    )
+    results = compare_controllers(bundle, [scen])
+    assert "t" in results
+    names = {m.controller for m in results["t"]}
+    assert names == {"do_nothing", "greedy_rule", "learned"}
+    assert all(m.n_steps > 0 for m in results["t"])
