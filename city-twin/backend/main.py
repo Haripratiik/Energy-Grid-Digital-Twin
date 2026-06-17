@@ -601,6 +601,40 @@ async def frequency_response(disturbance: float = Query(0.12, gt=0.0, le=0.5)):
     return [r.model_dump() for r in compare_inertia_scenarios(disturbance)]
 
 
+# --- WLS state estimation + bad-data detection ---
+
+@app.get("/estimate")
+async def estimate(
+    case: str = Query("ieee118"),
+    bad: bool = Query(False, description="inject a gross measurement error"),
+    noise: float = Query(0.02, gt=0.0, le=0.2),
+):
+    """Run WLS state estimation on a benchmark grid; optionally inject bad data."""
+    import pandapower.networks as nw
+    from physics.lodf import DCSystem
+    from physics.state_estimation import DCStateEstimator
+
+    loaders = {
+        "ieee14": ("IEEE-14", nw.case14),
+        "ieee30": ("IEEE-30", nw.case30),
+        "ieee118": ("IEEE-118", nw.case118),
+    }
+    label, fn = loaders.get(case, loaders["ieee118"])
+
+    def run_se():
+        dc = DCSystem.from_pandapower(fn())
+        est = DCStateEstimator(dc)
+        bad_idx = est.n_meas // 3 if bad else None
+        z, sigma = est.simulate_measurements(
+            noise_pu=noise, seed=1, bad_index=bad_idx, bad_error_pu=0.6,
+        )
+        result = est.estimate(z, sigma)
+        return {"case": label, "injected_bad_index": bad_idx, "result": result.model_dump()}
+
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(None, run_se)
+
+
 # --- Demo ---
 
 @app.post("/demo")

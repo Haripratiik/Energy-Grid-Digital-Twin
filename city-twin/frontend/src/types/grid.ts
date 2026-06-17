@@ -162,6 +162,43 @@ export interface LodfBenchRow {
   max_error_pu: number;
 }
 
+// --- WLS state estimation (GET /estimate) ---
+
+export interface EstimationResult {
+  n_measurements: number;
+  n_states: number;
+  redundancy: number;
+  objective_j: number;
+  chi2_threshold: number;
+  bad_data_detected: boolean;
+  max_normalized_residual: number;
+  flagged_measurement: number | null;
+  angle_rmse_rad: number;
+  flow_rmse_pu: number;
+  measurement_noise_pu: number;
+}
+
+export interface EstimateResponse {
+  case: string;
+  injected_bad_index: number | null;
+  result: EstimationResult;
+}
+
+// --- frequency response (GET /frequency-response) ---
+
+export interface FrequencyResponseRow {
+  scenario: string;
+  total_inertia_h: number;
+  disturbance_pu: number;
+  rocof_hz_s: number;
+  analytic_rocof_hz_s: number;
+  rocof_error_pct: number;
+  nadir_hz: number;
+  nadir_time_s: number;
+  settling_hz: number;
+  breaches_rocof_limit: boolean;
+}
+
 export interface OntologyLink {
   target_rid: string;
   link_type: string;
