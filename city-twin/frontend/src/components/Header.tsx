@@ -11,6 +11,8 @@ interface Props {
   demo: DemoStatus;
   onToggleMode: () => void;
   onOpenTwin: () => void;
+  appMode: "operations" | "testing";
+  onToggleAppMode: () => void;
 }
 
 function formatSimTime(seconds: number): string {
@@ -58,7 +60,10 @@ export default function Header({
   demo,
   onToggleMode,
   onOpenTwin,
+  appMode,
+  onToggleAppMode,
 }: Props) {
+  const testing = appMode === "testing";
   const freq = gridState?.system_frequency_hz ?? 60.0;
   const genMw = gridState?.total_generation_mw ?? 0;
   const loadMw = gridState?.total_load_mw ?? 0;
@@ -114,6 +119,28 @@ export default function Header({
 
         {/* Right: controls */}
         <div className="flex items-center gap-2 shrink-0">
+          {/* Operations (clean monitoring) ↔ Testing (fault-injection sandbox) */}
+          <button
+            onClick={onToggleAppMode}
+            className="flex items-center h-7 rounded-full overflow-hidden border border-border-strong"
+            title={
+              testing
+                ? "Testing: fault-injection sandbox enabled"
+                : "Operations: clean real-time monitoring (no self-inflicted faults)"
+            }
+          >
+            <span className={`font-mono text-[10px] px-2.5 h-full flex items-center uppercase tracking-wider transition-all duration-200 ${
+              !testing ? "bg-accent-green text-bg-primary" : "bg-transparent text-text-muted"
+            }`}>
+              Ops
+            </span>
+            <span className={`font-mono text-[10px] px-2.5 h-full flex items-center uppercase tracking-wider transition-all duration-200 ${
+              testing ? "bg-accent-yellow text-bg-primary" : "bg-transparent text-text-muted"
+            }`}>
+              Test
+            </span>
+          </button>
+
           <button
             onClick={onOpenTwin}
             className="font-mono text-[10px] px-2.5 py-1.5 uppercase tracking-wider border border-accent-green/60 text-accent-green hover:bg-accent-green hover:text-bg-primary transition-colors"
@@ -121,23 +148,29 @@ export default function Header({
           >
             Digital Twin
           </button>
-          <button
-            onClick={handleDemo}
-            disabled={demo.active}
-            className={`font-mono text-[10px] px-2.5 py-1.5 uppercase tracking-wider transition-colors border ${
-              demo.active
-                ? "border-accent-yellow/40 text-accent-yellow/60 cursor-not-allowed"
-                : "border-accent-blue text-accent-blue hover:bg-accent-blue hover:text-white"
-            }`}
-          >
-            {demo.active ? "Demo" : "Run Demo"}
-          </button>
-          <button
-            onClick={handleRestore}
-            className="font-mono text-[10px] px-2.5 py-1.5 uppercase tracking-wider border border-border-strong text-text-secondary hover:bg-bg-elevated transition-colors"
-          >
-            Restore
-          </button>
+
+          {/* Sandbox controls — testing mode only */}
+          {testing && (
+            <>
+              <button
+                onClick={handleDemo}
+                disabled={demo.active}
+                className={`font-mono text-[10px] px-2.5 py-1.5 uppercase tracking-wider transition-colors border ${
+                  demo.active
+                    ? "border-accent-yellow/40 text-accent-yellow/60 cursor-not-allowed"
+                    : "border-accent-blue text-accent-blue hover:bg-accent-blue hover:text-white"
+                }`}
+              >
+                {demo.active ? "Demo" : "Run Demo"}
+              </button>
+              <button
+                onClick={handleRestore}
+                className="font-mono text-[10px] px-2.5 py-1.5 uppercase tracking-wider border border-border-strong text-text-secondary hover:bg-bg-elevated transition-colors"
+              >
+                Restore
+              </button>
+            </>
+          )}
 
           <button
             onClick={onToggleMode}

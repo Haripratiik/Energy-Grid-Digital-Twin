@@ -47,6 +47,9 @@ export default function App() {
     null,
   );
   const [twinOpen, setTwinOpen] = useState(false);
+  // "operations" = clean real-time monitoring (no self-inflicted faults);
+  // "testing" = sandbox with fault injection + demo scenarios.
+  const [appMode, setAppMode] = useState<"operations" | "testing">("operations");
 
   return (
     <div className="h-full w-full flex flex-col bg-bg-primary overflow-hidden relative">
@@ -57,6 +60,10 @@ export default function App() {
         demo={demo}
         onToggleMode={toggleMode}
         onOpenTwin={() => setTwinOpen(true)}
+        appMode={appMode}
+        onToggleAppMode={() =>
+          setAppMode((m) => (m === "operations" ? "testing" : "operations"))
+        }
       />
 
       <TwinView open={twinOpen} onClose={() => setTwinOpen(false)} />
@@ -67,6 +74,7 @@ export default function App() {
           <TopologyPanel
             gridState={gridState}
             highlightedAsset={highlightedAsset}
+            testingMode={appMode === "testing"}
           />
         </Panel>
 

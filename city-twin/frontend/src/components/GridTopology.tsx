@@ -11,6 +11,8 @@ type ViewMode = "schematic" | "city" | "editor";
 interface Props {
   gridState: GridState | null;
   highlightedAsset: string | null;
+  /** Show the fault-injection sandbox controls (testing mode only). */
+  testingMode?: boolean;
 }
 
 /* ── layout: three concentric rings in an 800×600 viewBox ── */
@@ -468,7 +470,7 @@ function SchematicView({
 
 /* ── main component with view toggle ── */
 
-export default function GridTopology({ gridState, highlightedAsset }: Props) {
+export default function GridTopology({ gridState, highlightedAsset, testingMode = true }: Props) {
   const [view, setView] = useState<ViewMode>("schematic");
   const presetCtx = useCityMapPreset();
 
@@ -528,7 +530,7 @@ export default function GridTopology({ gridState, highlightedAsset }: Props) {
         </div>
       )}
 
-      <FaultInjector />
+      {testingMode && <FaultInjector />}
     </div>
   );
 }

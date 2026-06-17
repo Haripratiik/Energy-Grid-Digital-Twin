@@ -8,11 +8,12 @@ const GeoMap = lazy(() => import("./GeoMap"));
 interface Props {
   gridState: GridState | null;
   highlightedAsset: string | null;
+  testingMode?: boolean;
 }
 
 type View = "force" | "geo";
 
-export default function TopologyPanel({ gridState, highlightedAsset }: Props) {
+export default function TopologyPanel({ gridState, highlightedAsset, testingMode }: Props) {
   const [view, setView] = useState<View>("force");
 
   return (
@@ -31,7 +32,11 @@ export default function TopologyPanel({ gridState, highlightedAsset }: Props) {
         ))}
       </div>
       {view === "force" ? (
-        <GridTopology gridState={gridState} highlightedAsset={highlightedAsset} />
+        <GridTopology
+          gridState={gridState}
+          highlightedAsset={highlightedAsset}
+          testingMode={testingMode}
+        />
       ) : (
         <Suspense
           fallback={

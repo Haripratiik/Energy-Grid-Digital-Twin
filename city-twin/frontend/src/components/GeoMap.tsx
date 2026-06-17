@@ -133,9 +133,16 @@ export default function GeoMap({ gridState }: { gridState: GridState | null }) {
         },
       });
       loadedRef.current = true;
+      map.resize();   // ensure correct size once layers are added
     });
 
+    // MapLibre renders blank if the flex container had no height at init;
+    // observe the container and resize the canvas whenever it changes.
+    const ro = new ResizeObserver(() => map.resize());
+    ro.observe(containerRef.current);
+
     return () => {
+      ro.disconnect();
       map.remove();
       mapRef.current = null;
       loadedRef.current = false;
