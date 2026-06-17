@@ -542,6 +542,56 @@ async def get_protection_events():
     }
 
 
+# --- Digital Twin (UKF state estimation) ---
+
+@app.get("/twin/run")
+async def twin_run(
+    steps: int = Query(600, ge=50, le=1500),
+    anomaly_step: Optional[int] = Query(400),
+    measured: str = Query("0,1,2", description="comma-separated machine indices sensed"),
+):
+    """Run the plant/twin UKF synchronization loop and return its time series."""
+    from twin.digital_twin import DigitalTwin, TwinConfig
+
+    try:
+        meas = tuple(int(x) for x in measured.split(",") if x.strip() != "")
+    except ValueError:
+        meas = (0, 1, 2)
+    cfg = TwinConfig(measured_machines=meas or (0, 1, 2))
+    dt = DigitalTwin(cfg)
+
+    loop = asyncio.get_event_loop()
+    step_list, summary = await loop.run_in_executor(
+        None, lambda: dt.run(n_steps=steps, anomaly_step=anomaly_step),
+    )
+    return {
+        "summary": summary.model_dump(),
+        "anomaly_step": anomaly_step,
+        "dt_s": cfg.dt,
+        "steps": [s.model_dump() for s in step_list],
+    }
+
+
+# --- Performance (fast N-1 screening) ---
+
+@app.get("/perf/lodf")
+async def perf_lodf(case: str = Query("ieee118")):
+    """Benchmark LODF fast N-1 screening vs brute force on a benchmark network."""
+    import pandapower.networks as nw
+    from physics.perf.benchmark import benchmark_case
+
+    loaders = {
+        "ieee118": ("IEEE-118", nw.case118),
+        "case300": ("case300", nw.case300),
+        "case1354": ("case1354pegase", nw.case1354pegase),
+        "case2869": ("case2869pegase", nw.case2869pegase),
+    }
+    label, fn = loaders.get(case, loaders["ieee118"])
+    loop = asyncio.get_event_loop()
+    row = await loop.run_in_executor(None, lambda: benchmark_case(label, fn))
+    return row.model_dump()
+
+
 # --- Demo ---
 
 @app.post("/demo")

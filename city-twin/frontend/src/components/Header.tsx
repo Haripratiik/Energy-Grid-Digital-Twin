@@ -10,6 +10,7 @@ interface Props {
   mode: AutonomousMode;
   demo: DemoStatus;
   onToggleMode: () => void;
+  onOpenTwin: () => void;
 }
 
 function formatSimTime(seconds: number): string {
@@ -56,6 +57,7 @@ export default function Header({
   mode,
   demo,
   onToggleMode,
+  onOpenTwin,
 }: Props) {
   const freq = gridState?.system_frequency_hz ?? 60.0;
   const genMw = gridState?.total_generation_mw ?? 0;
@@ -112,6 +114,13 @@ export default function Header({
 
         {/* Right: controls */}
         <div className="flex items-center gap-2 shrink-0">
+          <button
+            onClick={onOpenTwin}
+            className="font-mono text-[10px] px-2.5 py-1.5 uppercase tracking-wider border border-accent-green/60 text-accent-green hover:bg-accent-green hover:text-bg-primary transition-colors"
+            title="Digital twin — real-time state estimation (UKF)"
+          >
+            Digital Twin
+          </button>
           <button
             onClick={handleDemo}
             disabled={demo.active}

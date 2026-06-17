@@ -281,6 +281,24 @@ cascade paths.
 > Tested in [tests/test_lodf.py](../city-twin/backend/tests/test_lodf.py)
 > (6 passing). Full suite: 74.
 
+## Milestone 9 — Operator-Console Visualizations — ✅ SHIPPED
+
+> Surfaces the new capabilities in the React/D3/Recharts control-room UI
+> (matching the existing dense, monospace, dark design system).
+> - **N-1 Contingency panel** ([ContingencyPanel.tsx](../city-twin/frontend/src/components/ContingencyPanel.tsx))
+>   — live ranked contingency list with severity bars and outcome badges, fed by
+>   the SSE `contingency` summary + `GET /contingencies`; integrated into the
+>   operator-console column.
+> - **Digital-Twin modal** ([TwinView.tsx](../city-twin/frontend/src/components/TwinView.tsx))
+>   — launched from the header; plots twin-vs-plant estimation error and the
+>   innovation² anomaly score (log scale, anomaly window shaded), an
+>   observability toggle (full vs partial sensing), and a live **LODF fast-screen
+>   performance strip**. Backed by new `GET /twin/run` and `GET /perf/lodf`.
+>
+> Frontend type-checks and builds clean (`npm run build`). Applies the
+> ui-ux-pro-max chart rules (tooltips, legends, accessible colors, subtle grid,
+> tabular figures, reduced-motion).
+
 ## Sequencing & why this order
 
 ```

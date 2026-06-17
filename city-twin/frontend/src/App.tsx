@@ -15,6 +15,8 @@ import OperatorConsole from "./components/OperatorConsole";
 import DecisionQueue from "./components/DecisionQueue";
 import GeneratorMix from "./components/GeneratorMix";
 import DecisionLog from "./components/DecisionLog";
+import ContingencyPanel from "./components/ContingencyPanel";
+import TwinView from "./components/TwinView";
 
 function ResizeHandleH() {
   return (
@@ -44,6 +46,7 @@ export default function App() {
   const [highlightedAsset, setHighlightedAsset] = useState<string | null>(
     null,
   );
+  const [twinOpen, setTwinOpen] = useState(false);
 
   return (
     <div className="h-full w-full flex flex-col bg-bg-primary overflow-hidden relative">
@@ -53,7 +56,10 @@ export default function App() {
         mode={mode}
         demo={demo}
         onToggleMode={toggleMode}
+        onOpenTwin={() => setTwinOpen(true)}
       />
+
+      <TwinView open={twinOpen} onClose={() => setTwinOpen(false)} />
 
       <Group orientation="horizontal" className="flex-1 min-h-0">
         {/* Panel 1 — Grid Topology */}
@@ -77,12 +83,22 @@ export default function App() {
 
         <ResizeHandleH />
 
-        {/* Panel 3 — Operator Console */}
+        {/* Panel 3 — Operator Console + N-1 Contingency Analysis */}
         <Panel defaultSize={25} minSize={15}>
-          <OperatorConsole
-            gridState={gridState}
-            onAssetClick={setHighlightedAsset}
-          />
+          <Group orientation="vertical">
+            <Panel defaultSize={58} minSize={20}>
+              <OperatorConsole
+                gridState={gridState}
+                onAssetClick={setHighlightedAsset}
+              />
+            </Panel>
+
+            <ResizeHandleV />
+
+            <Panel defaultSize={42} minSize={15}>
+              <ContingencyPanel summary={gridState?.contingency} />
+            </Panel>
+          </Group>
         </Panel>
 
         <ResizeHandleH />

@@ -51,6 +51,19 @@ export interface GridAlert {
   acknowledged: boolean;
 }
 
+/** Compact N-1 summary merged into the SSE stream (full report at /contingencies). */
+export interface ContingencySummary {
+  base_secure: boolean;
+  n_insecure: number;
+  n_screened: number;
+  worst: {
+    contingency_id: string;
+    label: string;
+    outcome: string;
+    severity: number;
+  } | null;
+}
+
 export interface GridState {
   sim_time_s: number;
   wall_time: string;
@@ -64,6 +77,89 @@ export interface GridState {
   transformers: TransformerState[];
   active_alerts: GridAlert[];
   ontology_dirty: boolean;
+  contingency?: ContingencySummary | null;
+}
+
+// --- N-1 contingency analysis (GET /contingencies) ---
+
+export type ContingencyOutcome =
+  | "SECURE"
+  | "THERMAL_OVERLOAD"
+  | "VOLTAGE_VIOLATION"
+  | "COLLAPSE";
+
+export interface ContingencyViolation {
+  asset_rid: string;
+  kind: string;
+  value: number;
+  detail: string;
+}
+
+export interface ContingencyResult {
+  contingency_id: string;
+  kind: "LINE" | "TRANSFORMER" | "GENERATOR";
+  label: string;
+  outcome: ContingencyOutcome;
+  severity: number;
+  converged: boolean;
+  n_violations: number;
+  worst_voltage_pu?: number | null;
+  worst_loading_pct?: number | null;
+  violations: ContingencyViolation[];
+}
+
+export interface ContingencyReport {
+  base_secure: boolean;
+  base_converged: boolean;
+  n_screened: number;
+  n_ac_verified: number;
+  n_insecure: number;
+  worst: ContingencyResult | null;
+  results: ContingencyResult[];
+}
+
+// --- Digital twin (GET /twin/run) ---
+
+export interface TwinStep {
+  t: number;
+  angle_rmse: number;
+  speed_rmse: number;
+  nis: number;
+  anomaly_active: boolean;
+}
+
+export interface TwinSummary {
+  n_steps: number;
+  n_measured: number;
+  n_states: number;
+  converged_angle_rmse: number;
+  converged_speed_rmse: number;
+  initial_angle_rmse: number;
+  nis_baseline_mean: number;
+  nis_anomaly_peak: number;
+  anomaly_detected: boolean;
+}
+
+export interface TwinRunResponse {
+  summary: TwinSummary;
+  anomaly_step: number | null;
+  dt_s: number;
+  steps: TwinStep[];
+}
+
+// --- Performance benchmark (GET /perf/lodf) ---
+
+export interface LodfBenchRow {
+  case: string;
+  n_bus: number;
+  n_branch: number;
+  build_ms: number;
+  lodf_screen_ms: number;
+  bruteforce_ms: number;
+  bruteforce_projected: boolean;
+  speedup: number;
+  contingencies_per_s: number;
+  max_error_pu: number;
 }
 
 export interface OntologyLink {

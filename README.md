@@ -415,6 +415,9 @@ The reasoning engine automatically falls back to cached responses if no API key 
 | `/chat/threads` | GET/POST | List or create chat threads |
 | `/chat/threads/{id}/messages` | GET/POST | Read or send messages to the AI |
 | `/reasoning` | POST | Manually trigger a reasoning cycle (optional `query`) |
+| `/protection/events` | GET | Relay-trip cascade log (enable `GRID_PROTECTION=1`) |
+| `/twin/run` | GET | Run the UKF digital-twin loop; returns the tracking time series |
+| `/perf/lodf` | GET | Benchmark LODF fast N-1 screening on a network (`?case=`) |
 | `/generators` | GET | Current generator states |
 | `/demo` | POST | Start the built-in demo scenario |
 | `/demo/status` | GET | Demo scenario progress |
