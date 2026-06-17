@@ -1,0 +1,3 @@
+-r requirements-dev.txt
+# Research layer (GridWorld learned world model). CPU torch is sufficient.
+torch>=2.0

@@ -212,6 +212,29 @@ cascade paths.
 
 ---
 
+## Milestone 5 — GridWorld Learned World Model (research) — ✅ SHIPPED
+
+> The research payoff the whole arc points at. [`research/`](../city-twin/backend/research/):
+> a supervised task (predict grid security `H` steps ahead) built from the M2
+> trajectories, with honest splits (by-trajectory, no leakage; held-out fault
+> family for generalization), numpy baselines (persistence, logistic), a
+> topology-blind MLP, and an action-conditioned message-passing **GNN** in pure
+> PyTorch ([world_model.py](../city-twin/backend/research/world_model.py)). A
+> `LearnedController` ([controller.py](../city-twin/backend/research/controller.py))
+> ranks candidate actions by predicted security — the counterfactual planner.
+> Train/benchmark CLI: `python -m research.train --data <dir>`. Tested in
+> [tests/test_research.py](../city-twin/backend/tests/test_research.py) (10
+> passing; torch-gated parts `importorskip` so core CI stays torch-free).
+>
+> **Honest finding:** all learned models beat persistence by AUROC and rank
+> unseen-family risk better (0.91–0.94 vs 0.89), but fixed-threshold calibration
+> degrades under distribution shift, and at this short horizon the GNN does *not*
+> beat the MLP — near-term security is largely aggregate-readable. The rigorous
+> eval harness (incl. the split that reveals the calibration failure) is the
+> deliverable, not a hero number. Next: harder topology-dependent targets
+> (which element fails / cascade depth), longer horizons, held-out *assets*.
+> See [research/README.md](../city-twin/backend/research/README.md).
+
 ## Sequencing & why this order
 
 ```

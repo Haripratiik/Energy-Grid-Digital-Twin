@@ -213,6 +213,21 @@ its seed. The same machinery records `(node, edge, global, action)` graph
 tensors with outcome labels — the training corpus for a learned grid world model
 (the *GridWorld* research extension).
 
+### GridWorld Learned World Model
+The research extension ([`research/`](city-twin/backend/research/)): trains
+action-conditioned models on the generated trajectories to predict near-term
+grid security, benchmarking a message-passing **GNN** against topology-blind and
+persistence baselines, with honest by-trajectory and held-out-fault-family
+splits. Includes a `LearnedController` that ranks candidate actions by predicted
+security (counterfactual planning). See
+[research/README.md](city-twin/backend/research/README.md) for the pipeline,
+commands, and the (honestly-reported) findings.
+
+```bash
+pip install -r requirements-research.txt    # adds CPU torch
+python -m research.train --data data/gw --holdout-family trafo_trip
+```
+
 ### Persistence & History
 SQLite-backed durable storage ([`storage/`](city-twin/backend/storage/)) for
 telemetry time-series, the decision audit trail, and evaluation runs, queryable

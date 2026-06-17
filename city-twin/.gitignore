@@ -60,3 +60,6 @@ backend/foundry_export/
 *.db
 *.sqlite
 *.sqlite3
+
+# Test temp artifacts
+backend/tests/_tmp*/
