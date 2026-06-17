@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { Suspense, lazy, useEffect, useRef, useState } from "react";
 import * as d3 from "d3";
 import type { GridState } from "../types/grid";
 import FaultInjector from "./FaultInjector";
@@ -6,7 +6,10 @@ import CityMapView from "./CityMapView";
 import CityMapEditor from "./CityMapEditor";
 import { useCityMapPreset } from "../hooks/useCityMapPreset";
 
-type ViewMode = "schematic" | "city" | "editor";
+// Leaflet map is loaded only when the operator opens the Geographic view.
+const GeoMap = lazy(() => import("./GeoMap"));
+
+type ViewMode = "schematic" | "city" | "editor" | "geo";
 
 interface Props {
   gridState: GridState | null;
@@ -497,6 +500,9 @@ export default function GridTopology({ gridState, highlightedAsset, testingMode 
           <button onClick={() => setView("editor")} className={tabCls("editor")}>
             Edit Layout
           </button>
+          <button onClick={() => setView("geo")} className={tabCls("geo")}>
+            Geographic
+          </button>
         </div>
         {view === "city" && (
           <select
@@ -511,7 +517,19 @@ export default function GridTopology({ gridState, highlightedAsset, testingMode 
         )}
       </div>
 
-      {view === "schematic" ? (
+      {view === "geo" ? (
+        <div className="flex-1 min-h-0 bg-bg-primary">
+          <Suspense
+            fallback={
+              <div className="flex h-full items-center justify-center font-mono text-[11px] text-text-muted">
+                loading map…
+              </div>
+            }
+          >
+            <GeoMap gridState={gridState} />
+          </Suspense>
+        </div>
+      ) : view === "schematic" ? (
         <SchematicView gridState={gridState} highlightedAsset={highlightedAsset} />
       ) : view === "editor" ? (
         <div className="flex-1 min-h-0 bg-bg-primary">

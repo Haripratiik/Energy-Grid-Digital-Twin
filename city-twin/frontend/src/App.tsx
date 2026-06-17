@@ -9,7 +9,7 @@ import { useOntology } from "./hooks/useOntology";
 import { useDecisions } from "./hooks/useDecisions";
 import { useDemoStatus } from "./hooks/useDemoStatus";
 import Header from "./components/Header";
-import TopologyPanel from "./components/TopologyPanel";
+import GridTopology from "./components/GridTopology";
 import OntologyGraph from "./components/OntologyGraph";
 import OperatorConsole from "./components/OperatorConsole";
 import DecisionQueue from "./components/DecisionQueue";
@@ -71,7 +71,7 @@ export default function App() {
       <Group orientation="horizontal" className="flex-1 min-h-0">
         {/* Panel 1 — Grid Topology (force graph ↔ geographic map) */}
         <Panel defaultSize={30} minSize={15}>
-          <TopologyPanel
+          <GridTopology
             gridState={gridState}
             highlightedAsset={highlightedAsset}
             testingMode={appMode === "testing"}
