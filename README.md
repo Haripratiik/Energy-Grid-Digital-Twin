@@ -182,6 +182,30 @@ Energy-Grid-Digital-Twin/
 
 ---
 
+## Performance & Scale — Fast N-1 Contingency Screening
+
+Brute-force N-1 screening re-solves a power flow for every possible outage —
+O(N) solves. The [`physics/lodf.py`](city-twin/backend/physics/lodf.py) module
+precomputes **PTDF / LODF** distribution factors so that *all* single-branch
+outages are evaluated in one vectorised matrix expression, scaling to thousands
+of buses. It is exact for the DC model (matches brute force to machine precision).
+
+```bash
+cd city-twin/backend
+python -m physics.perf.benchmark --jax
+```
+
+| network | buses | branches | LODF screen | brute-force | speedup |
+|---------|------:|---------:|------------:|------------:|--------:|
+| IEEE-118 | 118 | 186 | 0.03 ms | 132 ms | **4,159×** |
+| case300 | 300 | 411 | 1.1 ms | 1.1 s* | 1,022× |
+| case1354pegase | 1354 | 1991 | 31 ms | 4.2 min* | 8,154× |
+| case2869pegase | 2869 | 4582 | **152 ms** (14 ms JAX-jitted) | ~73 min* | **28,665×** |
+
+*\*brute-force projected from a sample of outages.* All **4,582 N-1
+contingencies on a 2869-bus grid screened in 152 ms** (14 ms with the optional
+JAX-jitted path), agreeing with brute-force re-solves to ~1e-10.
+
 ## Digital Twin — Real-Time State Estimation
 
 The defining property of a digital twin is a model kept *synchronized* to a

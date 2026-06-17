@@ -269,6 +269,18 @@ cascade paths.
 > [tests/test_twin.py](../city-twin/backend/tests/test_twin.py) (10 passing).
 > Full suite: 68.
 
+## Milestone 8 — Performance & Scale (LODF fast N-1 screening) — ✅ SHIPPED
+
+> Demonstrates high-performance simulation engineering.
+> [`physics/lodf.py`](../city-twin/backend/physics/lodf.py) builds PTDF/LODF
+> distribution factors and screens *all* single-branch N-1 contingencies in one
+> vectorised matrix expression — exact for the DC model (machine-precision vs
+> brute force). Scales from IEEE-118 to the 2869-bus PEGASE case: **all 4,582
+> contingencies screened in 152 ms (14 ms JAX-jitted) — a ~28,000× speedup** over
+> N brute-force re-solves. Benchmark: `python -m physics.perf.benchmark --jax`.
+> Tested in [tests/test_lodf.py](../city-twin/backend/tests/test_lodf.py)
+> (6 passing). Full suite: 74.
+
 ## Sequencing & why this order
 
 ```
