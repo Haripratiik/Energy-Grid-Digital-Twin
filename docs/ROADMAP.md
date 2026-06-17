@@ -314,6 +314,20 @@ cascade paths.
 > [tests/test_state_estimation.py](../city-twin/backend/tests/test_state_estimation.py)
 > (7 passing). Full suite: 81.
 
+## Milestone 11 — Renewable Integration: Inertia & Grid-Forming Inverters — ✅ SHIPPED
+
+> The modern low-inertia-grid frontier.
+> [`physics/frequency_response.py`](../city-twin/backend/physics/frequency_response.py):
+> the standard aggregated System Frequency Response model with synchronous and
+> **grid-forming** (virtual-inertia + fast-droop) sources. Demonstrates the
+> renewable-integration result — falling inertia drives RoCoF past the 1 Hz/s
+> grid-code limit (1.80 Hz/s at H=2 vs 0.60 at H=6), and grid-forming inverters
+> restore it (0.80 Hz/s). Initial RoCoF validated against the analytical
+> −ΔP/(2H) to **0.00 %**. `python -m physics.frequency_response`,
+> `GET /frequency-response`. Tested in
+> [tests/test_frequency_response.py](../city-twin/backend/tests/test_frequency_response.py)
+> (6 passing). Full suite: 87.
+
 ## Sequencing & why this order
 
 ```

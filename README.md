@@ -20,6 +20,7 @@ Every claim below is validated against a benchmark or analytical result, or meas
 - **WLS state estimation + bad-data detection** — the EMS-standard estimator recovers true state from redundant noisy sensors and detects *and localizes* gross errors via the χ² test + largest normalized residual. → [State Estimation](#state-estimation--bad-data-detection)
 - **High-performance contingency screening** — LODF distribution factors screen *all* N-1 contingencies on a **2,869-bus** grid in **152 ms** (~28,000× faster than brute force), exact to machine precision. → [Performance & Scale](#performance--scale--fast-n-1-contingency-screening)
 - **N-1 security & emergent cascades** — continuous contingency ranking, plus inverse-time protection that produces cascading failures from the physics rather than scripting.
+- **Renewable integration & inertia** — a System Frequency Response model shows how falling inertia (renewables displacing synchronous machines) pushes RoCoF past grid-code limits, and how **grid-forming inverters** restore it. → [Renewable Integration](#renewable-integration--inertia--grid-forming-inverters)
 - **Learned world model** — a graph neural network trained on simulated fault trajectories, benchmarked honestly against baselines for grid-security prediction.
 
 ---
@@ -267,6 +268,28 @@ This is the "twin tracks reality, flags divergence" loop — advanced nonlinear
 Bayesian estimation over real power-system dynamics, validated against an IEEE
 benchmark.
 
+## Renewable Integration — Inertia & Grid-Forming Inverters
+
+The defining stability problem of the energy transition: inverter-coupled
+renewables carry no rotating inertia, so as they displace synchronous machines
+the system frequency falls *faster* (higher RoCoF) and *deeper* after a loss.
+[`physics/frequency_response.py`](city-twin/backend/physics/frequency_response.py)
+models this with the standard aggregated System Frequency Response model and shows
+how **grid-forming inverters** (synthetic inertia + fast droop) restore stability.
+
+```bash
+cd city-twin/backend
+python -m physics.frequency_response
+```
+
+For a 12% generation loss (initial RoCoF matches the analytical −ΔP/(2H) to **0.00%**):
+
+| scenario | inertia H | RoCoF | nadir | grid-code (1 Hz/s) |
+|----------|----------:|------:|------:|:------------------:|
+| High inertia (all synchronous) | 6.0 | 0.60 Hz/s | 59.09 Hz | ok |
+| Low inertia (high renewables) | 2.0 | **1.80 Hz/s** | 58.58 Hz | **BREACH** |
+| Low inertia + grid-forming | 4.5 | 0.80 Hz/s | 59.48 Hz | ok |
+
 ## Physics Validation
 
 The simulation physics are validated against recognized benchmarks and analytical
@@ -447,6 +470,7 @@ The reasoning engine automatically falls back to cached responses if no API key 
 | `/protection/events` | GET | Relay-trip cascade log (enable `GRID_PROTECTION=1`) |
 | `/twin/run` | GET | Run the UKF digital-twin loop; returns the tracking time series |
 | `/perf/lodf` | GET | Benchmark LODF fast N-1 screening on a network (`?case=`) |
+| `/frequency-response` | GET | RoCoF/nadir under varying inertia + grid-forming (`?disturbance=`) |
 | `/generators` | GET | Current generator states |
 | `/demo` | POST | Start the built-in demo scenario |
 | `/demo/status` | GET | Demo scenario progress |

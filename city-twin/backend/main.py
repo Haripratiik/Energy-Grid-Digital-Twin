@@ -592,6 +592,15 @@ async def perf_lodf(case: str = Query("ieee118")):
     return row.model_dump()
 
 
+# --- Frequency response (inertia / grid-forming) ---
+
+@app.get("/frequency-response")
+async def frequency_response(disturbance: float = Query(0.12, gt=0.0, le=0.5)):
+    """RoCoF / nadir under high inertia, low inertia (renewables), and grid-forming."""
+    from physics.frequency_response import compare_inertia_scenarios
+    return [r.model_dump() for r in compare_inertia_scenarios(disturbance)]
+
+
 # --- Demo ---
 
 @app.post("/demo")
