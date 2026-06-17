@@ -10,6 +10,11 @@
   </head>
   <body>
     <div id="root"></div>
+    <!-- Shim Node's `process` for browser libs (react-draggable reads
+         process.env.DRAGGABLE_DEBUG unguarded → would throw in the browser). -->
+    <script>
+      window.process = window.process || { env: {} };
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

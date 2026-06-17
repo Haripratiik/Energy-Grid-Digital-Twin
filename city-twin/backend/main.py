@@ -113,9 +113,11 @@ async def simulation_loop() -> None:
         if state is not None:
             new_alerts = alert_manager.evaluate(state)
             all_alerts = alert_manager.alerts
+            # Keep the simulator's computed ontology_dirty (true only on real
+            # topology changes) so the frontend refetches the ontology on
+            # changes, not every tick.
             state = state.model_copy(update={
                 "active_alerts": [a.model_dump() for a in all_alerts[-30:]],
-                "ontology_dirty": True,
             })
             ontology_store.update_from_physics_state(state)
 
