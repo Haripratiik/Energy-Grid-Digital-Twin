@@ -182,6 +182,181 @@ Energy-Grid-Digital-Twin/
 
 ---
 
+## Performance & Scale — Fast N-1 Contingency Screening
+
+Brute-force N-1 screening re-solves a power flow for every possible outage —
+O(N) solves. The [`physics/lodf.py`](city-twin/backend/physics/lodf.py) module
+precomputes **PTDF / LODF** distribution factors so that *all* single-branch
+outages are evaluated in one vectorised matrix expression, scaling to thousands
+of buses. It is exact for the DC model (matches brute force to machine precision).
+
+```bash
+cd city-twin/backend
+python -m physics.perf.benchmark --jax
+```
+
+| network | buses | branches | LODF screen | brute-force | speedup |
+|---------|------:|---------:|------------:|------------:|--------:|
+| IEEE-118 | 118 | 186 | 0.03 ms | 132 ms | **4,159×** |
+| case300 | 300 | 411 | 1.1 ms | 1.1 s* | 1,022× |
+| case1354pegase | 1354 | 1991 | 31 ms | 4.2 min* | 8,154× |
+| case2869pegase | 2869 | 4582 | **152 ms** (14 ms JAX-jitted) | ~73 min* | **28,665×** |
+
+*\*brute-force projected from a sample of outages.* All **4,582 N-1
+contingencies on a 2869-bus grid screened in 152 ms** (14 ms with the optional
+JAX-jitted path), agreeing with brute-force re-solves to ~1e-10.
+
+## State Estimation & Bad-Data Detection
+
+A control room never measures the true state — it estimates it from a redundant,
+noisy, occasionally-faulty measurement set. [`physics/state_estimation.py`](city-twin/backend/physics/state_estimation.py)
+implements the EMS-standard **weighted-least-squares state estimator** (state =
+bus angles; measurements = branch flows + bus injections) with **χ² bad-data
+detection** and **largest-normalized-residual** identification.
+
+```bash
+cd city-twin/backend
+python -m physics.state_estimation
+```
+
+On IEEE-118 (measurement redundancy 2.6×): the estimate **denoises** (flow RMSE
+0.008 pu vs 0.02 pu sensor noise); clean data passes the χ² test; and a single
+injected gross error is both **detected** (J = 636 ≫ 234 threshold) and
+**localized to the exact measurement** (normalized residual 21).
+
+## Digital Twin — Real-Time State Estimation
+
+The defining property of a digital twin is a model kept *synchronized* to a
+physical asset from noisy, partial sensing. This is demonstrated end-to-end with
+a dual-simulator loop ([`twin/`](city-twin/backend/twin/)):
+
+```bash
+cd city-twin/backend
+python -m twin.demo
+```
+
+- A **physical plant** runs ground-truth [multi-machine swing dynamics](city-twin/backend/physics/classical_model.py)
+  (EMF behind transient reactance, Kron-reduced from the validated IEEE-9 network)
+  with process noise — never directly observed.
+- A **twin** receives only **noisy, partial rotor-angle measurements** (PMU-like)
+  and tracks the plant's *full* state with an **Unscented Kalman Filter** whose
+  process model is the same swing dynamics.
+
+Measured behavior:
+
+| property | result |
+|---|---|
+| Converged angle RMSE | **0.0016 rad** — *better than the 0.01 rad sensor noise* (the filter denoises) |
+| Unmeasured rotor-speed RMSE | **0.013 rad/s** — speeds are never measured, reconstructed from dynamics |
+| Partial observability (2 of 3 angles) | still tracks the unsensed machine and all speeds |
+| Statistical consistency | normalized innovation² ≈ 3 (= #measurements) — correctly tuned |
+| Anomaly detection | on an unmodeled plant event, innovation² spikes **~100×** (3 → 320) |
+
+This is the "twin tracks reality, flags divergence" loop — advanced nonlinear
+Bayesian estimation over real power-system dynamics, validated against an IEEE
+benchmark.
+
+## Physics Validation
+
+The simulation physics are validated against recognized benchmarks and analytical
+theory — not merely assumed plausible. Run the full report with:
+
+```bash
+cd city-twin/backend
+python -m physics.validation
+```
+
+**AC power flow** is validated against the standard IEEE test systems three
+independent ways: Newton-Raphson and fast-decoupled solvers must converge to the
+same voltages (uniqueness ⇒ correctness), nodal power must be conserved, and total
+losses must match published values.
+
+| case | buses | NR vs FD (ΔV) | conservation | losses | published |
+|------|------:|--------------:|-------------:|-------:|----------:|
+| IEEE-9 | 9 | 4e-10 pu | 7e-9 MW | 4.96 MW | 5.0 |
+| IEEE-14 | 14 | 3e-11 pu | 6e-9 MW | 13.39 MW | 13.4 |
+| IEEE-30 | 30 | 3e-10 pu | 5e-9 MW | 2.44 MW | — |
+| IEEE-57 | 57 | 3e-9 pu | 6e-8 MW | 30.29 MW | — |
+| IEEE-118 | 118 | 1e-10 pu | 2e-7 MW | 133.17 MW | 133.0 |
+
+**Swing-equation dynamics** are validated against the *analytical* small-signal
+oscillation frequency of a single-machine-infinite-bus system:
+ω_n = √(K_s / M). Simulated period **13.9149 s** vs analytical **13.9125 s** —
+**0.017 % error** — and the period scales as √(inertia) exactly as theory predicts.
+
+**Turbine-governor primary frequency control** ([physics/governor.py](city-twin/backend/physics/governor.py)):
+after losing a 280 MW generator, the droop governors collectively pick up ~40 MW
+of primary response, reducing the steady-state frequency deviation — the textbook
+behavior of primary control (which leaves a residual offset for secondary control
+to remove). Enable in the live simulator with `GRID_GOVERNOR=1`.
+
+## Analysis & Research Tooling
+
+Beyond the live operator console, the backend includes an analysis and research
+layer (see [docs/ROADMAP.md](docs/ROADMAP.md) for the full design rationale):
+
+### N-1 Contingency Analysis
+Continuous security assessment: for every line, transformer, and generator that
+could fail *next*, the grid is re-solved and ranked by violation severity. Uses
+a fast DC screen → AC verify of the worst cases on a decoupled network so it
+never blocks the real-time loop. Live summary streams over SSE; full report at
+`GET /contingencies`. Confirms the 400kV core is N-1 secure while the 33kV
+radial edges are the weak points.
+
+### GridWorld Evaluation Harness
+A headless, deterministic harness ([`eval/`](city-twin/backend/eval/)) that
+replays seeded fault scenarios under pluggable control policies and scores them
+on grid-stability metrics:
+
+```bash
+cd city-twin/backend
+python -m eval.run_eval                     # compare controllers across all scenarios
+python -m eval.run_eval --scenario trafo_trip_radial
+python -m eval.generate_dataset --out data/gridworld_v1   # GNN-ready trajectory dataset
+```
+
+Controllers (`do_nothing`, topology-aware `greedy_rule`, `llm`) act through the
+same `ActionExecutor` as the live engine. Each run is fully reproducible from
+its seed. The same machinery records `(node, edge, global, action)` graph
+tensors with outcome labels — the training corpus for a learned grid world model
+(the *GridWorld* research extension).
+
+### GridWorld Learned World Model
+The research extension ([`research/`](city-twin/backend/research/)): trains
+action-conditioned models on the generated trajectories to predict near-term
+grid security, benchmarking a message-passing **GNN** against topology-blind and
+persistence baselines, with honest by-trajectory and held-out-fault-family
+splits. Includes a `LearnedController` that ranks candidate actions by predicted
+security (counterfactual planning). See
+[research/README.md](city-twin/backend/research/README.md) for the pipeline,
+commands, and the (honestly-reported) findings.
+
+```bash
+pip install -r requirements-research.txt    # adds CPU torch
+python -m research.train --data data/gw --holdout-family trafo_trip
+```
+
+### Persistence & History
+SQLite-backed durable storage ([`storage/`](city-twin/backend/storage/)) for
+telemetry time-series, the decision audit trail, and evaluation runs, queryable
+at `/history/telemetry`, `/history/decisions`, `/history/eval`, `/history/stats`.
+
+### Emergent Cascading Failures
+Inverse-time overload protection ([`physics/protection.py`](city-twin/backend/physics/protection.py))
+auto-trips sustained overloads, so a single fault can cascade through the
+network on its own. Opt-in via `GRID_PROTECTION=1`; trip log at
+`GET /protection/events`.
+
+### Tests & CI
+```bash
+cd city-twin/backend
+pip install -r requirements-dev.txt
+pytest -q                                   # 38 tests: physics, decisions, contingency, eval, storage, protection
+```
+CI runs the suite on every push ([.github/workflows/ci.yml](.github/workflows/ci.yml)).
+
+---
+
 ## Getting Started
 
 ### Prerequisites
@@ -238,23 +413,33 @@ The reasoning engine automatically falls back to cached responses if no API key 
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
-| `/stream` | GET (SSE) | Real-time grid state stream (100ms ticks) |
-| `/inject-fault` | POST | Inject a fault into the simulation |
-| `/decisions` | GET | List pending decisions |
+| `/stream` | GET (SSE) | Real-time grid state stream (100ms ticks), incl. live contingency summary |
+| `/fault` | POST | Inject a fault into the simulation |
+| `/restore` | POST | Reset simulation to initial state |
+| `/contingencies` | GET | Ranked N-1 contingency report (`?refresh=true` to recompute) |
+| `/decisions/pending` | GET | List pending decisions |
+| `/decisions/log` | GET | Full decision audit trail |
 | `/decisions/{id}/approve` | POST | Approve a pending decision |
 | `/decisions/{id}/reject` | POST | Reject a pending decision |
 | `/decisions/{id}/revert` | POST | Revert an executed decision |
-| `/decisions/log` | GET | Full decision audit trail |
-| `/decisions/mode` | POST | Switch autonomous mode (SEMI/FULL_AUTO) |
+| `/mode` | GET/POST | Get or switch autonomous mode (SEMI/FULL_AUTO) |
 | `/ontology` | GET | Full asset graph (objects + relationships) |
-| `/ontology/alerts` | GET | Current alert states per asset |
-| `/chat/threads` | GET | List chat threads |
-| `/chat/threads/{id}/message` | POST | Send a message to the AI |
-| `/reasoning/trigger` | POST | Manually trigger a reasoning cycle |
-| `/reasoning/history` | GET | Reasoning history log |
+| `/ontology/propagation` | GET | BFS impact propagation for an alert (`?alert_id=`) |
+| `/alerts` | GET | Recent threshold-violation alerts |
+| `/history/telemetry` | GET | Persisted telemetry time-series (`?run_id=&limit=`) |
+| `/history/decisions` | GET | Persisted decision audit trail |
+| `/history/eval` | GET | Persisted controller-evaluation runs (`?scenario_id=`) |
+| `/history/stats` | GET | Row counts per persisted table |
+| `/chat/threads` | GET/POST | List or create chat threads |
+| `/chat/threads/{id}/messages` | GET/POST | Read or send messages to the AI |
+| `/reasoning` | POST | Manually trigger a reasoning cycle (optional `query`) |
+| `/protection/events` | GET | Relay-trip cascade log (enable `GRID_PROTECTION=1`) |
+| `/twin/run` | GET | Run the UKF digital-twin loop; returns the tracking time series |
+| `/perf/lodf` | GET | Benchmark LODF fast N-1 screening on a network (`?case=`) |
 | `/generators` | GET | Current generator states |
-| `/demo/start` | POST | Start the built-in demo scenario |
-| `/restore` | POST | Reset simulation to initial state |
+| `/demo` | POST | Start the built-in demo scenario |
+| `/demo/status` | GET | Demo scenario progress |
+| `/health` | GET | Liveness + sim time + pending decision count |
 
 ---
 

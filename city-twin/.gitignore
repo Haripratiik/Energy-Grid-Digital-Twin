@@ -51,3 +51,15 @@ htmlcov/
 # ── pandapower cache ──
 *.p
 *.pkl
+
+# ── Generated datasets & exports ──
+backend/data/
+backend/foundry_export/
+
+# ── SQLite databases ──
+*.db
+*.sqlite
+*.sqlite3
+
+# Test temp artifacts
+backend/tests/_tmp*/

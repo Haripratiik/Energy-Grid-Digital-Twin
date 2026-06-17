@@ -19,6 +19,8 @@ from typing import Optional
 from pydantic import BaseModel, Field
 
 from .ac_powerflow import ACPowerFlow, ACResult
+from .governor import TurbineGovernor
+from .protection import ProtectionSystem
 from .generators.base import GeneratorModel
 from .generators.gas import GasGenerator
 from .generators.hydro import HydroGenerator
@@ -124,10 +126,13 @@ class GridSimulator:
     RK4_DT = 0.02       # 20 ms per tick
     EMIT_EVERY = 5       # emit state every 5 ticks → 100 ms wall-clock
 
-    def __init__(self) -> None:
+    def __init__(self, *, protection_enabled: bool = False,
+                 governor_enabled: bool = False) -> None:
         self._sim_time: float = 0.0
         self._step_count: int = 0
         self._powerflow = ACPowerFlow()
+        self._protection = ProtectionSystem() if protection_enabled else None
+        self._governor = TurbineGovernor() if governor_enabled else None
 
         # Instantiate generator models from the network config
         self._generators: list[GeneratorModel] = []
@@ -251,13 +256,36 @@ class GridSimulator:
         ``None`` otherwise.
         """
         self._swing_step(self.RK4_DT)
+        if self._governor is not None:
+            freq = self._system_frequency()
+            for gen in self._generators:
+                self._governor.step(gen, freq, self.RK4_DT)
         self._sim_time += self.RK4_DT
         self._step_count += 1
 
         if self._step_count % self.EMIT_EVERY == 0:
             self._solve_and_sync()
+            if self._protection is not None:
+                self._apply_protection()
             return self.get_state()
         return None
+
+    def _apply_protection(self) -> None:
+        """Trip elements whose inverse-time overload relay has operated.
+
+        Runs on freshly-solved loadings; trips take effect on the next solve,
+        which can in turn overload neighbours — letting cascades emerge.
+        """
+        ac = self._last_ac_result
+        if ac is None or not ac.converged:
+            return
+        dt = self.RK4_DT * self.EMIT_EVERY
+        new_lines, new_trafos = self._protection.update(
+            ac.line_loading_pct, ac.trafo_loading_pct, dt,
+            self._tripped_lines, self._tripped_trafos, self._sim_time,
+        )
+        self._tripped_lines |= new_lines
+        self._tripped_trafos |= new_trafos
 
     # ------------------------------------------------------------------
     # State snapshot
@@ -472,6 +500,8 @@ class GridSimulator:
         """Reset every element back to its initial conditions."""
         self._tripped_lines.clear()
         self._tripped_trafos.clear()
+        if self._protection is not None:
+            self._protection.reset()
         self._p_load = {b.id: b.p_load_mw for b in BUSES}
         for gen in self._generators:
             gen.restore()
@@ -492,3 +522,14 @@ class GridSimulator:
     @property
     def generators(self) -> list[GeneratorModel]:
         return self._generators
+
+    @property
+    def protection_events(self) -> list[dict]:
+        """Chronological log of relay trips (empty if protection is disabled)."""
+        if self._protection is None:
+            return []
+        return [
+            {"sim_time_s": e.sim_time_s, "kind": e.kind,
+             "index": e.index, "loading_pct": e.loading_pct}
+            for e in self._protection.events
+        ]
