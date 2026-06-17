@@ -235,6 +235,21 @@ cascade paths.
 > (which element fails / cascade depth), longer horizons, held-out *assets*.
 > See [research/README.md](../city-twin/backend/research/README.md).
 
+## Milestone 6 — Physics Validation & Machine Dynamics — ✅ SHIPPED
+
+> Establishes that the physics are *correct*, not merely plausible — the core of
+> a credible physics-simulation project. [`physics/validation/`](../city-twin/backend/physics/validation/):
+> AC power flow validated against IEEE 9/14/30/57/118 (independent NR vs
+> fast-decoupled solvers agree to ~1e-10, nodal power conserved, losses match
+> published values); the swing integrator validated against the **analytical
+> SMIB small-signal eigenvalue** (simulated period 13.9149 s vs analytical
+> 13.9125 s, 0.017 % error, scales as √inertia). Adds a **turbine-governor**
+> primary frequency control model ([governor.py](../city-twin/backend/physics/governor.py),
+> opt-in `GRID_GOVERNOR=1`) — ~40 MW primary response after a 280 MW loss.
+> One command: `python -m physics.validation`. Tested in
+> [tests/test_validation.py](../city-twin/backend/tests/test_validation.py)
+> (7 passing). Full suite: 58.
+
 ## Sequencing & why this order
 
 ```

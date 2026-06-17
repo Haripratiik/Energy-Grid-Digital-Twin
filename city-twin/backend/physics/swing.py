@@ -19,6 +19,7 @@ from typing import Optional
 from pydantic import BaseModel, Field
 
 from .ac_powerflow import ACPowerFlow, ACResult
+from .governor import TurbineGovernor
 from .protection import ProtectionSystem
 from .generators.base import GeneratorModel
 from .generators.gas import GasGenerator
@@ -125,11 +126,13 @@ class GridSimulator:
     RK4_DT = 0.02       # 20 ms per tick
     EMIT_EVERY = 5       # emit state every 5 ticks → 100 ms wall-clock
 
-    def __init__(self, *, protection_enabled: bool = False) -> None:
+    def __init__(self, *, protection_enabled: bool = False,
+                 governor_enabled: bool = False) -> None:
         self._sim_time: float = 0.0
         self._step_count: int = 0
         self._powerflow = ACPowerFlow()
         self._protection = ProtectionSystem() if protection_enabled else None
+        self._governor = TurbineGovernor() if governor_enabled else None
 
         # Instantiate generator models from the network config
         self._generators: list[GeneratorModel] = []
@@ -253,6 +256,10 @@ class GridSimulator:
         ``None`` otherwise.
         """
         self._swing_step(self.RK4_DT)
+        if self._governor is not None:
+            freq = self._system_frequency()
+            for gen in self._generators:
+                self._governor.step(gen, freq, self.RK4_DT)
         self._sim_time += self.RK4_DT
         self._step_count += 1
 

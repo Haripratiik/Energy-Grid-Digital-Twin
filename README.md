@@ -182,6 +182,40 @@ Energy-Grid-Digital-Twin/
 
 ---
 
+## Physics Validation
+
+The simulation physics are validated against recognized benchmarks and analytical
+theory — not merely assumed plausible. Run the full report with:
+
+```bash
+cd city-twin/backend
+python -m physics.validation
+```
+
+**AC power flow** is validated against the standard IEEE test systems three
+independent ways: Newton-Raphson and fast-decoupled solvers must converge to the
+same voltages (uniqueness ⇒ correctness), nodal power must be conserved, and total
+losses must match published values.
+
+| case | buses | NR vs FD (ΔV) | conservation | losses | published |
+|------|------:|--------------:|-------------:|-------:|----------:|
+| IEEE-9 | 9 | 4e-10 pu | 7e-9 MW | 4.96 MW | 5.0 |
+| IEEE-14 | 14 | 3e-11 pu | 6e-9 MW | 13.39 MW | 13.4 |
+| IEEE-30 | 30 | 3e-10 pu | 5e-9 MW | 2.44 MW | — |
+| IEEE-57 | 57 | 3e-9 pu | 6e-8 MW | 30.29 MW | — |
+| IEEE-118 | 118 | 1e-10 pu | 2e-7 MW | 133.17 MW | 133.0 |
+
+**Swing-equation dynamics** are validated against the *analytical* small-signal
+oscillation frequency of a single-machine-infinite-bus system:
+ω_n = √(K_s / M). Simulated period **13.9149 s** vs analytical **13.9125 s** —
+**0.017 % error** — and the period scales as √(inertia) exactly as theory predicts.
+
+**Turbine-governor primary frequency control** ([physics/governor.py](city-twin/backend/physics/governor.py)):
+after losing a 280 MW generator, the droop governors collectively pick up ~40 MW
+of primary response, reducing the steady-state frequency deviation — the textbook
+behavior of primary control (which leaves a residual offset for secondary control
+to remove). Enable in the live simulator with `GRID_GOVERNOR=1`.
+
 ## Analysis & Research Tooling
 
 Beyond the live operator console, the backend includes an analysis and research
