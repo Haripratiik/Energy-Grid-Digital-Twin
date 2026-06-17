@@ -554,6 +554,27 @@ async def revert_decision(decision_id: str):
     return {"status": "error", "message": "Cannot revert — not executed or not reversible"}
 
 
+# --- Topology (static) ---
+
+@app.get("/topology")
+async def get_topology():
+    """Static line/transformer connectivity for geographic + schematic rendering."""
+    from physics.network import LINES, TRANSFORMERS
+
+    return {
+        "lines": [
+            {"index": i, "from_bus": ln.from_bus, "to_bus": ln.to_bus,
+             "voltage_kv": ln.voltage_kv}
+            for i, ln in enumerate(LINES)
+        ],
+        "transformers": [
+            {"index": i, "from_bus": t.from_bus, "to_bus": t.to_bus,
+             "from_kv": t.from_kv, "to_kv": t.to_kv}
+            for i, t in enumerate(TRANSFORMERS)
+        ],
+    }
+
+
 # --- Generators ---
 
 @app.get("/generators")
