@@ -1,5 +1,6 @@
 import os
 import asyncio
+import json
 import logging
 import time
 import warnings
@@ -21,8 +22,10 @@ from pydantic import BaseModel
 
 from ontology.model import GridAlert
 from ontology.store import AlertManager, OntologyStore
+from physics.contingency import ContingencyAnalyzer, ContingencyReport
 from physics.fault_handler import FaultHandler, FaultRequest, FaultType
 from physics.swing import GridSimulator, GridState
+from storage import GridStore
 from reasoning.engine import ReasoningEngine
 from decisions.models import AutonomousMode, ProposedAction
 from decisions.autonomous_engine import AutonomousEngine
@@ -43,6 +46,8 @@ reasoning_engine: ReasoningEngine
 autonomous_engine: AutonomousEngine
 chat_store: ChatStore
 chat_engine: ChatEngine
+contingency_analyzer: ContingencyAnalyzer
+store: GridStore
 
 _broadcast_queues: list[asyncio.Queue] = []
 _sim_task: Optional[asyncio.Task] = None
@@ -50,13 +55,58 @@ _demo_running: bool = False
 _demo_phase: Optional[str] = None
 _last_auto_reasoning: float = 0.0
 
+# N-1 contingency analysis runs off the physics tick on a throttled cadence.
+CONTINGENCY_INTERVAL_S: float = 3.0
+_latest_contingency: Optional[ContingencyReport] = None
+_last_contingency_run: float = 0.0
+_contingency_running: bool = False
+
+# Telemetry / decisions are persisted on a throttled cadence.
+PERSIST_INTERVAL_S: float = 1.0
+_last_persist_run: float = 0.0
+
+
+def _contingency_summary() -> Optional[dict]:
+    """Compact summary merged into the SSE stream (full report via /contingencies)."""
+    if _latest_contingency is None:
+        return None
+    r = _latest_contingency
+    worst = r.worst
+    return {
+        "base_secure": r.base_secure,
+        "n_insecure": r.n_insecure,
+        "n_screened": r.n_screened,
+        "worst": None if worst is None else {
+            "contingency_id": worst.contingency_id,
+            "label": worst.label,
+            "outcome": worst.outcome.value,
+            "severity": worst.severity,
+        },
+    }
+
 
 def _sim_tick():
     """Run one simulation step (CPU-bound, called in thread)."""
     return simulator.step()
 
 
+async def _run_contingency(state: GridState) -> None:
+    """Run N-1 analysis in a worker thread; store the latest report."""
+    global _latest_contingency, _contingency_running
+    _contingency_running = True
+    loop = asyncio.get_event_loop()
+    try:
+        _latest_contingency = await loop.run_in_executor(
+            None, contingency_analyzer.analyze, state,
+        )
+    except Exception:
+        logger.exception("Contingency analysis failed")
+    finally:
+        _contingency_running = False
+
+
 async def simulation_loop() -> None:
+    global _last_contingency_run
     loop = asyncio.get_event_loop()
     while True:
         state = await loop.run_in_executor(None, _sim_tick)
@@ -79,7 +129,24 @@ async def simulation_loop() -> None:
                         ))
                         break
 
-            payload = state.model_dump_json()
+            now = time.time()
+            if not _contingency_running and now - _last_contingency_run >= CONTINGENCY_INTERVAL_S:
+                _last_contingency_run = now
+                asyncio.create_task(_run_contingency(state))
+
+            global _last_persist_run
+            if now - _last_persist_run >= PERSIST_INTERVAL_S:
+                _last_persist_run = now
+                try:
+                    store.record_telemetry(state, run_id="live")
+                    for d in autonomous_engine.decision_log.get_all(50):
+                        store.record_decision(d.model_dump(mode="json"))
+                except Exception:
+                    logger.exception("Persistence write failed")
+
+            data = state.model_dump(mode="json")
+            data["contingency"] = _contingency_summary()
+            payload = json.dumps(data)
             dead: list[asyncio.Queue] = []
             for q in _broadcast_queues:
                 try:
@@ -166,11 +233,16 @@ async def run_demo_scenario() -> None:
 async def lifespan(app: FastAPI):
     global simulator, fault_handler, ontology_store, alert_manager
     global reasoning_engine, autonomous_engine, chat_store, chat_engine, _sim_task
+    global contingency_analyzer, store
 
-    simulator = GridSimulator()
+    simulator = GridSimulator(
+        protection_enabled=os.getenv("GRID_PROTECTION", "0") == "1",
+    )
     fault_handler = FaultHandler(simulator)
     ontology_store = OntologyStore()
     alert_manager = AlertManager()
+    contingency_analyzer = ContingencyAnalyzer()
+    store = GridStore(os.getenv("GRID_DB_PATH", "grid_twin.db"))
 
     api_key = os.getenv("OPENAI_API_KEY", "")
     demo_mode = not api_key or api_key == "your-api-key-here"
@@ -190,6 +262,10 @@ async def lifespan(app: FastAPI):
             await _sim_task
         except asyncio.CancelledError:
             pass
+    try:
+        store.close()
+    except Exception:
+        pass
 
 
 app = FastAPI(title="City-Twin Grid API v2", lifespan=lifespan)
@@ -265,6 +341,54 @@ async def get_ontology():
 @app.get("/ontology/propagation")
 async def get_propagation(alert_id: str = Query(...)):
     return ontology_store.get_propagation(alert_id, alert_manager.alerts)
+
+
+# --- Contingency Analysis (N-1) ---
+
+@app.get("/contingencies")
+async def get_contingencies(
+    limit: int = Query(25, ge=1, le=200),
+    refresh: bool = Query(False),
+):
+    """Latest N-1 contingency report. Pass ?refresh=true to recompute now."""
+    global _latest_contingency
+    if refresh or _latest_contingency is None:
+        loop = asyncio.get_event_loop()
+        _latest_contingency = await loop.run_in_executor(
+            None, contingency_analyzer.analyze, simulator.get_state(),
+        )
+    report = _latest_contingency
+    data = report.model_dump(mode="json")
+    data["results"] = data["results"][:limit]
+    return data
+
+
+# --- History (persisted) ---
+
+@app.get("/history/telemetry")
+async def history_telemetry(
+    run_id: str = Query("live"),
+    limit: int = Query(500, ge=1, le=5000),
+):
+    return store.telemetry_history(run_id=run_id, limit=limit)
+
+
+@app.get("/history/decisions")
+async def history_decisions(limit: int = Query(100, ge=1, le=500)):
+    return store.decision_history(limit=limit)
+
+
+@app.get("/history/eval")
+async def history_eval(
+    scenario_id: Optional[str] = Query(None),
+    limit: int = Query(200, ge=1, le=1000),
+):
+    return store.eval_runs(scenario_id=scenario_id, limit=limit)
+
+
+@app.get("/history/stats")
+async def history_stats():
+    return store.counts()
 
 
 # --- Alerts ---
@@ -404,6 +528,17 @@ async def revert_decision(decision_id: str):
 @app.get("/generators")
 async def get_generators():
     return [g.to_dict() for g in simulator.generators]
+
+
+# --- Protection (emergent cascades) ---
+
+@app.get("/protection/events")
+async def get_protection_events():
+    """Chronological relay-trip log. Enable with GRID_PROTECTION=1."""
+    return {
+        "enabled": simulator._protection is not None,
+        "events": simulator.protection_events,
+    }
 
 
 # --- Demo ---

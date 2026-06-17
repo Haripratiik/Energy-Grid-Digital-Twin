@@ -182,6 +182,58 @@ Energy-Grid-Digital-Twin/
 
 ---
 
+## Analysis & Research Tooling
+
+Beyond the live operator console, the backend includes an analysis and research
+layer (see [docs/ROADMAP.md](docs/ROADMAP.md) for the full design rationale):
+
+### N-1 Contingency Analysis
+Continuous security assessment: for every line, transformer, and generator that
+could fail *next*, the grid is re-solved and ranked by violation severity. Uses
+a fast DC screen → AC verify of the worst cases on a decoupled network so it
+never blocks the real-time loop. Live summary streams over SSE; full report at
+`GET /contingencies`. Confirms the 400kV core is N-1 secure while the 33kV
+radial edges are the weak points.
+
+### GridWorld Evaluation Harness
+A headless, deterministic harness ([`eval/`](city-twin/backend/eval/)) that
+replays seeded fault scenarios under pluggable control policies and scores them
+on grid-stability metrics:
+
+```bash
+cd city-twin/backend
+python -m eval.run_eval                     # compare controllers across all scenarios
+python -m eval.run_eval --scenario trafo_trip_radial
+python -m eval.generate_dataset --out data/gridworld_v1   # GNN-ready trajectory dataset
+```
+
+Controllers (`do_nothing`, topology-aware `greedy_rule`, `llm`) act through the
+same `ActionExecutor` as the live engine. Each run is fully reproducible from
+its seed. The same machinery records `(node, edge, global, action)` graph
+tensors with outcome labels — the training corpus for a learned grid world model
+(the *GridWorld* research extension).
+
+### Persistence & History
+SQLite-backed durable storage ([`storage/`](city-twin/backend/storage/)) for
+telemetry time-series, the decision audit trail, and evaluation runs, queryable
+at `/history/telemetry`, `/history/decisions`, `/history/eval`, `/history/stats`.
+
+### Emergent Cascading Failures
+Inverse-time overload protection ([`physics/protection.py`](city-twin/backend/physics/protection.py))
+auto-trips sustained overloads, so a single fault can cascade through the
+network on its own. Opt-in via `GRID_PROTECTION=1`; trip log at
+`GET /protection/events`.
+
+### Tests & CI
+```bash
+cd city-twin/backend
+pip install -r requirements-dev.txt
+pytest -q                                   # 38 tests: physics, decisions, contingency, eval, storage, protection
+```
+CI runs the suite on every push ([.github/workflows/ci.yml](.github/workflows/ci.yml)).
+
+---
+
 ## Getting Started
 
 ### Prerequisites
@@ -238,23 +290,30 @@ The reasoning engine automatically falls back to cached responses if no API key 
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
-| `/stream` | GET (SSE) | Real-time grid state stream (100ms ticks) |
-| `/inject-fault` | POST | Inject a fault into the simulation |
-| `/decisions` | GET | List pending decisions |
+| `/stream` | GET (SSE) | Real-time grid state stream (100ms ticks), incl. live contingency summary |
+| `/fault` | POST | Inject a fault into the simulation |
+| `/restore` | POST | Reset simulation to initial state |
+| `/contingencies` | GET | Ranked N-1 contingency report (`?refresh=true` to recompute) |
+| `/decisions/pending` | GET | List pending decisions |
+| `/decisions/log` | GET | Full decision audit trail |
 | `/decisions/{id}/approve` | POST | Approve a pending decision |
 | `/decisions/{id}/reject` | POST | Reject a pending decision |
 | `/decisions/{id}/revert` | POST | Revert an executed decision |
-| `/decisions/log` | GET | Full decision audit trail |
-| `/decisions/mode` | POST | Switch autonomous mode (SEMI/FULL_AUTO) |
+| `/mode` | GET/POST | Get or switch autonomous mode (SEMI/FULL_AUTO) |
 | `/ontology` | GET | Full asset graph (objects + relationships) |
-| `/ontology/alerts` | GET | Current alert states per asset |
-| `/chat/threads` | GET | List chat threads |
-| `/chat/threads/{id}/message` | POST | Send a message to the AI |
-| `/reasoning/trigger` | POST | Manually trigger a reasoning cycle |
-| `/reasoning/history` | GET | Reasoning history log |
+| `/ontology/propagation` | GET | BFS impact propagation for an alert (`?alert_id=`) |
+| `/alerts` | GET | Recent threshold-violation alerts |
+| `/history/telemetry` | GET | Persisted telemetry time-series (`?run_id=&limit=`) |
+| `/history/decisions` | GET | Persisted decision audit trail |
+| `/history/eval` | GET | Persisted controller-evaluation runs (`?scenario_id=`) |
+| `/history/stats` | GET | Row counts per persisted table |
+| `/chat/threads` | GET/POST | List or create chat threads |
+| `/chat/threads/{id}/messages` | GET/POST | Read or send messages to the AI |
+| `/reasoning` | POST | Manually trigger a reasoning cycle (optional `query`) |
 | `/generators` | GET | Current generator states |
-| `/demo/start` | POST | Start the built-in demo scenario |
-| `/restore` | POST | Reset simulation to initial state |
+| `/demo` | POST | Start the built-in demo scenario |
+| `/demo/status` | GET | Demo scenario progress |
+| `/health` | GET | Liveness + sim time + pending decision count |
 
 ---
 
