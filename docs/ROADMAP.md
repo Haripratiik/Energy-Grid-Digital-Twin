@@ -328,6 +328,25 @@ cascade paths.
 > [tests/test_frequency_response.py](../city-twin/backend/tests/test_frequency_response.py)
 > (6 passing). Full suite: 87.
 
+## Milestone 12 — Physics Safety-Verifier & Geographic Map — ✅ SHIPPED
+
+> **"AI proposes, physics guarantees safety."**
+> [`decisions/safety_verifier.py`](../city-twin/backend/decisions/safety_verifier.py):
+> before any action (LLM, rule-based, or learned) executes, its effect is applied
+> to a decoupled copy and AC power flow is re-solved; the action is **rejected if
+> it fails to converge or worsens security**. Wired into the autonomous engine's
+> auto-execute / countdown / approve paths (`verify_actions=True`) — a physics
+> check can now overrule even an operator approval. `POST /verify-action`; the
+> verdict is stored on each decision. Tested in
+> [tests/test_safety_verifier.py](../city-twin/backend/tests/test_safety_verifier.py)
+> (6 passing; suite 93).
+>
+> **Geographic map** — real Atlanta-metro transmission infrastructure (1,250
+> lines, 293 substations, 6 plants) fetched from OpenStreetMap
+> ([scripts/fetch_grid_geo.py](../city-twin/scripts/fetch_grid_geo.py)) and rendered
+> on a dark MapLibre basemap, with the simulated grid's live bus states overlaid.
+> Force-graph ↔ Geographic toggle on the topology panel; MapLibre lazy-loaded.
+
 ## Sequencing & why this order
 
 ```

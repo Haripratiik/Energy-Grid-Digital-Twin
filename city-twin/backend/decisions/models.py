@@ -34,6 +34,7 @@ class GridDecision(BaseModel):
     pre_state_snapshot: dict = Field(default_factory=dict)
     post_state_snapshot: Optional[dict] = None
     outcome_delta: Optional[dict] = None  # measured improvement/degradation
+    verification: Optional[dict] = None   # physics safety-verifier result
     timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 

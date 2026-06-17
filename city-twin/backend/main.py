@@ -500,6 +500,36 @@ async def get_decision_log(limit: int = Query(100, ge=1, le=500)):
     return autonomous_engine.decision_log.get_all(limit)
 
 
+class VerifyActionRequest(BaseModel):
+    action_type: str
+    target_rid: str
+    parameters: dict = {}
+    estimated_impact_mw: float = 0.0
+    reversible: bool = True
+
+
+@app.post("/verify-action")
+async def verify_action(req: VerifyActionRequest):
+    """Physics safety check: would this action keep the grid secure? (re-solves power flow)"""
+    from decisions.models import ProposedAction
+
+    try:
+        pa = ProposedAction(
+            action_type=req.action_type, target_rid=req.target_rid,
+            parameters=req.parameters, rationale="manual check", confidence=1.0,
+            estimated_impact_mw=req.estimated_impact_mw, reversible=req.reversible,
+        )
+    except Exception as exc:  # noqa: BLE001
+        return {"error": f"invalid action: {exc}"}
+
+    state = simulator.get_state()
+    loop = asyncio.get_event_loop()
+    result = await loop.run_in_executor(
+        None, autonomous_engine._verifier.verify, state, pa,
+    )
+    return result.model_dump()
+
+
 @app.post("/decisions/{decision_id}/approve")
 async def approve_decision(decision_id: str):
     success = autonomous_engine.approve(decision_id)

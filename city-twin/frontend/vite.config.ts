@@ -14,12 +14,16 @@ export default defineConfig({
     },
   },
   build: {
+    // maplibre-gl is an inherently large (~1 MB) vendor lib, isolated and
+    // lazy-loaded; the rest of the app stays small.
+    chunkSizeWarningLimit: 1200,
     rollupOptions: {
       output: {
         // Split heavy visualization libraries into cacheable vendor chunks
         // so the initial bundle stays lean.
         manualChunks(id) {
           if (id.includes("node_modules")) {
+            if (id.includes("maplibre-gl")) return "maplibre";
             if (id.includes("recharts") || id.includes("/d3")) return "charts";
             if (id.includes("framer-motion")) return "motion";
             if (

@@ -10,6 +10,7 @@ from .risk_classifier import RiskClassifier
 from .action_executor import ActionExecutor
 from .outcome_monitor import OutcomeMonitor
 from .decision_log import DecisionLog
+from .safety_verifier import SafetyVerifier
 
 if TYPE_CHECKING:
     from physics.swing import GridSimulator, GridState
@@ -24,10 +25,13 @@ OUTCOME_WAIT_S = 5.0
 
 
 class AutonomousEngine:
-    def __init__(self, simulator: GridSimulator, reasoning: ReasoningEngine):
+    def __init__(self, simulator: GridSimulator, reasoning: ReasoningEngine,
+                 *, verify_actions: bool = True):
         self._sim = simulator
         self._reasoning = reasoning
         self._executor = ActionExecutor(simulator)
+        self._verifier = SafetyVerifier()
+        self._verify_actions = verify_actions
         self._log = DecisionLog()
         self._mode = AutonomousMode.SEMI
         self._last_analysis_time = 0.0
@@ -145,8 +149,24 @@ class AutonomousEngine:
             decision.executed_by = "AI_AUTO"
             logger.info("FULL_AUTO: %s decision %s queued — auto-executes in %ds", risk.value, decision.id[:8], FULL_AUTO_DISPLAY_S)
 
+    def _verify_and_execute(self, decision: GridDecision) -> bool:
+        """Physics safety gate: re-solve power flow for the action before executing.
+
+        Rejects (does not execute) any action that fails to converge or worsens
+        grid security — "AI proposes, physics guarantees safety."
+        """
+        if self._verify_actions:
+            result = self._verifier.verify(self._sim.get_state(), decision.action)
+            decision.verification = result.model_dump()
+            if not result.safe:
+                decision.status = "REJECTED"
+                logger.warning("Safety verifier BLOCKED decision %s: %s",
+                               decision.id[:8], result.reason)
+                return False
+        return self._executor.execute(decision)
+
     def _auto_execute(self, decision: GridDecision) -> None:
-        success = self._executor.execute(decision)
+        success = self._verify_and_execute(decision)
         if success:
             self._pending_outcomes.append((decision, time.time()))
             logger.info("Auto-executed %s decision %s", decision.risk_level.value, decision.id[:8])
@@ -162,7 +182,7 @@ class AutonomousEngine:
         for decision in self._log.get_pending():
             if decision.expires_at and now >= decision.expires_at:
                 logger.info("Countdown expired — auto-executing decision %s", decision.id[:8])
-                success = self._executor.execute(decision)
+                success = self._verify_and_execute(decision)
                 if success:
                     self._pending_outcomes.append((decision, time.time()))
                 else:
@@ -185,7 +205,7 @@ class AutonomousEngine:
         decision.executed_by = "OPERATOR"
         state = self._sim.get_state()
         decision.pre_state_snapshot = OutcomeMonitor.capture_snapshot(state)
-        success = self._executor.execute(decision)
+        success = self._verify_and_execute(decision)
         if success:
             self._pending_outcomes.append((decision, time.time()))
         return success

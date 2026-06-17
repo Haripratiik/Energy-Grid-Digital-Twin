@@ -9,7 +9,7 @@ import { useOntology } from "./hooks/useOntology";
 import { useDecisions } from "./hooks/useDecisions";
 import { useDemoStatus } from "./hooks/useDemoStatus";
 import Header from "./components/Header";
-import GridTopology from "./components/GridTopology";
+import TopologyPanel from "./components/TopologyPanel";
 import OntologyGraph from "./components/OntologyGraph";
 import OperatorConsole from "./components/OperatorConsole";
 import DecisionQueue from "./components/DecisionQueue";
@@ -62,9 +62,9 @@ export default function App() {
       <TwinView open={twinOpen} onClose={() => setTwinOpen(false)} />
 
       <Group orientation="horizontal" className="flex-1 min-h-0">
-        {/* Panel 1 — Grid Topology */}
+        {/* Panel 1 — Grid Topology (force graph ↔ geographic map) */}
         <Panel defaultSize={30} minSize={15}>
-          <GridTopology
+          <TopologyPanel
             gridState={gridState}
             highlightedAsset={highlightedAsset}
           />

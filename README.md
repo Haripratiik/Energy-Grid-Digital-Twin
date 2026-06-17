@@ -22,6 +22,8 @@ Every claim below is validated against a benchmark or analytical result, or meas
 - **N-1 security & emergent cascades** — continuous contingency ranking, plus inverse-time protection that produces cascading failures from the physics rather than scripting.
 - **Renewable integration & inertia** — a System Frequency Response model shows how falling inertia (renewables displacing synchronous machines) pushes RoCoF past grid-code limits, and how **grid-forming inverters** restore it. → [Renewable Integration](#renewable-integration--inertia--grid-forming-inverters)
 - **Learned world model** — a graph neural network trained on simulated fault trajectories, benchmarked honestly against baselines for grid-security prediction.
+- **AI with a physics safety net** — every proposed action is re-checked by AC power flow before it executes ("AI proposes, physics guarantees safety"); a verification can overrule even an operator approval.
+- **Geographic view** — the simulated grid overlaid on *real* Atlanta-metro transmission infrastructure (lines/substations/plants from OpenStreetMap) on a dark MapLibre basemap.
 
 ---
 
