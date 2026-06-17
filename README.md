@@ -7,9 +7,20 @@
 ![OpenAI](https://img.shields.io/badge/OpenAI-GPT--4o-412991?style=flat&logo=openai&logoColor=white)
 ![D3](https://img.shields.io/badge/D3.js-v7-F9A03C?style=flat&logo=d3.js&logoColor=white)
 
-> Physics-accurate power grid digital twin with an autonomous AI decision engine, real-time ontology graph, and a live React operator dashboard.
+> Physics-accurate power grid digital twin: validated power-system physics, real-time state estimation, fast contingency analysis at scale, and a live React operator console.
 
-A full-stack simulation of the Atlanta metropolitan power grid — 80 buses, ~2,430 MW of generation capacity — running at near-real-time with actual power systems physics, an autonomous AI decision layer, and an interactive operator console.
+A full-stack simulation of the Atlanta metropolitan power grid — 80 buses, ~2,430 MW of generation capacity — running near-real-time with genuine power-systems physics, real-time state estimation, an autonomous AI decision layer, and an interactive operator console.
+
+### Technical highlights
+
+Every claim below is validated against a benchmark or analytical result, or measured — see [docs/ROADMAP.md](docs/ROADMAP.md) and the **81-test** backend suite.
+
+- **Validated physics** — AC power flow matched to the IEEE 9/14/30/57/118 benchmark systems; the swing-equation integrator validated against the *analytical* single-machine-infinite-bus eigenvalue to **0.017 %**. → [Physics Validation](#physics-validation)
+- **Digital-twin state estimation** — an Unscented Kalman Filter keeps a twin synchronized to a noisy physical plant, *denoising below sensor accuracy*, reconstructing unmeasured rotor speeds, and flagging anomalies (innovation² spikes ~100×). → [Digital Twin](#digital-twin--real-time-state-estimation)
+- **WLS state estimation + bad-data detection** — the EMS-standard estimator recovers true state from redundant noisy sensors and detects *and localizes* gross errors via the χ² test + largest normalized residual. → [State Estimation](#state-estimation--bad-data-detection)
+- **High-performance contingency screening** — LODF distribution factors screen *all* N-1 contingencies on a **2,869-bus** grid in **152 ms** (~28,000× faster than brute force), exact to machine precision. → [Performance & Scale](#performance--scale--fast-n-1-contingency-screening)
+- **N-1 security & emergent cascades** — continuous contingency ranking, plus inverse-time protection that produces cascading failures from the physics rather than scripting.
+- **Learned world model** — a graph neural network trained on simulated fault trajectories, benchmarked honestly against baselines for grid-security prediction.
 
 ---
 
