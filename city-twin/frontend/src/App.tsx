@@ -122,7 +122,7 @@ export default function App() {
           compactType="vertical"
           isDraggable
           isResizable
-          resizeHandles={["se", "e", "s"]}
+          resizeHandles={["se"]}
         >
           <div key="topology">
             <PanelCard>

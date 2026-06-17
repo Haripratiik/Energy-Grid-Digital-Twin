@@ -147,26 +147,3 @@ body,
 .react-grid-item:hover > .react-resizable-handle-se::after {
   border-color: var(--accent-blue);
 }
-/* Edge grab strips (right & bottom) for easier resizing. */
-.react-grid-item > .react-resizable-handle-e {
-  top: 0;
-  right: 0;
-  width: 7px;
-  height: 100%;
-  margin: 0;
-  transform: none;
-  cursor: ew-resize;
-}
-.react-grid-item > .react-resizable-handle-s {
-  left: 0;
-  bottom: 0;
-  width: 100%;
-  height: 7px;
-  margin: 0;
-  transform: none;
-  cursor: ns-resize;
-}
-.react-grid-item:hover > .react-resizable-handle-e,
-.react-grid-item:hover > .react-resizable-handle-s {
-  background: rgba(45, 122, 246, 0.18);
-}
