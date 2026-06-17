@@ -1,5 +1,5 @@
-import { useCallback, useState, type ReactNode } from "react";
-import GridLayout, { WidthProvider, type Layout } from "react-grid-layout";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import GridLayout, { type Layout } from "react-grid-layout";
 import "react-grid-layout/css/styles.css";
 import "react-resizable/css/styles.css";
 import { useGridStream } from "./hooks/useGridStream";
@@ -16,7 +16,6 @@ import DecisionLog from "./components/DecisionLog";
 import ContingencyPanel from "./components/ContingencyPanel";
 import TwinView from "./components/TwinView";
 
-const RGL = WidthProvider(GridLayout);
 const LAYOUT_KEY = "gridtwin.layout.v1";
 
 const DEFAULT_LAYOUT: Layout[] = [
@@ -64,6 +63,20 @@ export default function App() {
   const [appMode, setAppMode] = useState<"operations" | "testing">("operations");
   const [layout, setLayout] = useState<Layout[]>(loadLayout);
 
+  // Measure the grid container width ourselves (more reliable than WidthProvider
+  // inside a flex/overflow container under React StrictMode).
+  const gridWrapRef = useRef<HTMLDivElement>(null);
+  const [gridWidth, setGridWidth] = useState(0);
+  useEffect(() => {
+    const el = gridWrapRef.current;
+    if (!el) return;
+    const measure = () => setGridWidth(el.clientWidth);
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
   const onLayoutChange = useCallback((next: Layout[]) => {
     setLayout(next);
     try {
@@ -94,9 +107,11 @@ export default function App() {
 
       <TwinView open={twinOpen} onClose={() => setTwinOpen(false)} />
 
-      <div className="flex-1 min-h-0 overflow-auto p-1.5">
-        <RGL
+      <div ref={gridWrapRef} className="flex-1 min-h-0 overflow-auto p-1.5">
+        {gridWidth > 0 && (
+        <GridLayout
           className="layout"
+          width={gridWidth - 12}
           layout={layout}
           cols={12}
           rowHeight={28}
@@ -105,6 +120,8 @@ export default function App() {
           draggableHandle=".panel-drag"
           onLayoutChange={onLayoutChange}
           compactType="vertical"
+          isDraggable
+          isResizable
         >
           <div key="topology">
             <PanelCard>
@@ -158,7 +175,8 @@ export default function App() {
               <DecisionLog decisions={log} onRevert={revert} />
             </PanelCard>
           </div>
-        </RGL>
+        </GridLayout>
+        )}
       </div>
     </div>
   );

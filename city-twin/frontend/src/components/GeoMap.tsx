@@ -111,10 +111,12 @@ export default function GeoMap({ gridState }: { gridState: GridState | null }) {
       const st = lines[t.index];
       if (!a || !b || !st) continue;
       const tripped = st.tripped;
+      const loadFrac = Math.min(Math.max(st.flow_pct_of_limit, 0), 1);
       L.polyline([toLatLng(a.x, a.y), toLatLng(b.x, b.y)], {
         color: tripped ? "#464c58" : lineColor(st.flow_pct_of_limit),
-        weight: t.voltage_kv >= 300 ? 2.5 : t.voltage_kv >= 100 ? 1.6 : 0.9,
-        opacity: tripped ? 0.5 : 0.85,
+        // opacity tracks live loading so flows visibly vary even when "green"
+        weight: (t.voltage_kv >= 300 ? 2.5 : t.voltage_kv >= 100 ? 1.6 : 0.9) + loadFrac * 1.2,
+        opacity: tripped ? 0.45 : 0.4 + loadFrac * 0.55,
         dashArray: tripped ? "3 4" : undefined,
       }).addTo(lineLayer);
     }
