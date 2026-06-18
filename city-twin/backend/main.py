@@ -557,6 +557,23 @@ async def revert_decision(decision_id: str):
     return {"status": "error", "message": "Cannot revert — not executed or not reversible"}
 
 
+# --- Real grid (OpenStreetMap topology) ---
+
+_real_grid_cache: Optional[dict] = None
+
+
+@app.get("/real-grid")
+async def real_grid():
+    """The REAL Georgia transmission grid (OSM topology, DC power-flow solution)."""
+    global _real_grid_cache
+    if _real_grid_cache is None:
+        from physics.real_grid import build_real_grid
+        loop = asyncio.get_event_loop()
+        grid = await loop.run_in_executor(None, build_real_grid)
+        _real_grid_cache = grid.model_dump()
+    return _real_grid_cache
+
+
 # --- Topology (static) ---
 
 @app.get("/topology")

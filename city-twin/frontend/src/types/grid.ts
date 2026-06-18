@@ -184,6 +184,34 @@ export interface EstimateResponse {
   result: EstimationResult;
 }
 
+// --- real Georgia grid from OpenStreetMap (GET /real-grid) ---
+
+export interface RealBus {
+  id: number;
+  lat: number;
+  lon: number;
+  voltage_kv: number;
+  is_source: boolean;
+  load_mw: number;
+}
+
+export interface RealLine {
+  from_id: number;
+  to_id: number;
+  voltage_kv: number;
+  length_km: number;
+  flow_mw: number;
+  loading_pct: number;
+}
+
+export interface RealGrid {
+  buses: RealBus[];
+  lines: RealLine[];
+  n_buses: number;
+  n_lines: number;
+  source: string;
+}
+
 // --- frequency response (GET /frequency-response) ---
 
 export interface FrequencyResponseRow {
