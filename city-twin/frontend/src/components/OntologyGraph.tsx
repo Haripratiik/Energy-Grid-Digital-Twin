@@ -41,294 +41,193 @@ const STATUS_FILL: Record<string, string> = {
 
 function nodeR(type: string): number {
   switch (type) {
-    case "GridSystem":
-      return 22;
-    case "Region":
-      return 18;
-    case "Substation":
-      return 10;
-    case "Generator":
-      return 10;
-    case "TransmissionLine":
-      return 5;
-    case "Transformer":
-      return 6;
-    case "LoadBus":
-      return 5;
-    default:
-      return 6;
+    case "GridSystem": return 22;
+    case "Region": return 18;
+    case "Substation": return 10;
+    case "Generator": return 10;
+    case "TransmissionLine": return 5;
+    case "Transformer": return 6;
+    case "LoadBus": return 5;
+    default: return 6;
   }
 }
 
-export default function OntologyGraph({
-  ontology,
-  gridState,
-  fetchPropagation,
-}: Props) {
+/** Status-aware colour for a node's shape. */
+function colorFor(objType: string, status: string, genType?: string): string {
+  const statusFill = STATUS_FILL[status];
+  if (objType === "Generator") {
+    if (statusFill) return statusFill;
+    if (genType && GEN_TYPE_COLOR[genType]) return GEN_TYPE_COLOR[genType];
+    return TYPE_FILL.Generator;
+  }
+  return statusFill || TYPE_FILL[objType] || "#8a919e";
+}
+
+/** Update fill/stroke/opacity of an already-built node selection in place. */
+function applyStatus(node: d3.Selection<SVGGElement, any, any, any>) {
+  node.each(function (d: any) {
+    const color = colorFor(d.object_type, d.status, d.properties?.gen_type);
+    const op = d.status === "TRIPPED" ? 0.3 : 0.7;
+    const shape = d3.select(this).select(".node-shape");
+    if (d.object_type === "Substation") {
+      shape.attr("fill", "#1d2128").attr("fill-opacity", op).attr("stroke", color);
+    } else {
+      shape.attr("fill", color).attr("fill-opacity", op).attr("stroke", color);
+    }
+  });
+}
+
+export default function OntologyGraph({ ontology, fetchPropagation }: Props) {
   const svgRef = useRef<SVGSVGElement>(null);
   const simRef = useRef<d3.Simulation<any, any> | null>(null);
-  const [tooltip, setTooltip] = useState<{
-    x: number;
-    y: number;
-    asset: GridAsset;
-  } | null>(null);
-
-  /* keep gridState & fetchPropagation available for future tooltip actions */
-  const gridRef = useRef(gridState);
-  gridRef.current = gridState;
+  const nodeSelRef = useRef<d3.Selection<SVGGElement, any, any, any> | null>(null);
+  const builtRef = useRef(false);
+  const [tooltip, setTooltip] = useState<{ x: number; y: number; asset: GridAsset } | null>(null);
   const propRef = useRef(fetchPropagation);
   propRef.current = fetchPropagation;
 
+  // --- build the graph ONCE (structure is static) ---
   useEffect(() => {
-    if (!svgRef.current || !ontology) return;
+    if (!svgRef.current || !ontology || builtRef.current) return;
+    builtRef.current = true;
 
     const svg = d3.select(svgRef.current);
     const width = svgRef.current.clientWidth || 400;
     const height = svgRef.current.clientHeight || 500;
-
     svg.selectAll("*").remove();
 
     const g = svg.append("g");
-
-    const zoom = d3
-      .zoom<SVGSVGElement, unknown>()
+    const zoom = d3.zoom<SVGSVGElement, unknown>()
       .scaleExtent([0.2, 4])
       .on("zoom", (event) => g.attr("transform", event.transform));
     svg.call(zoom);
 
     const nodes = ontology.nodes.map((n) => ({ ...n, id: n.rid }));
     const links = ontology.edges.map((e) => ({
-      source: e.source_rid,
-      target: e.target_rid,
-      link_type: e.link_type,
+      source: e.source_rid, target: e.target_rid, link_type: e.link_type,
     }));
 
-    const simulation = d3
-      .forceSimulation(nodes as any)
-      .force(
-        "link",
-        d3
-          .forceLink(links)
-          .id((d: any) => d.id)
-          .distance(55),
-      )
+    const simulation = d3.forceSimulation(nodes as any)
+      .force("link", d3.forceLink(links).id((d: any) => d.id).distance(55))
       .force("charge", d3.forceManyBody().strength(-100))
       .force("center", d3.forceCenter(width / 2, height / 2))
-      .force(
-        "collide",
-        d3.forceCollide().radius((d: any) => nodeR(d.object_type) + 5),
-      );
-
+      .force("collide", d3.forceCollide().radius((d: any) => nodeR(d.object_type) + 5));
     simRef.current = simulation;
 
-    /* edges */
-    const link = g
-      .append("g")
-      .selectAll("line")
-      .data(links)
-      .join("line")
-      .attr("stroke", "#252830")
-      .attr("stroke-width", 1)
-      .attr("stroke-opacity", 0.6);
+    const link = g.append("g").selectAll("line").data(links).join("line")
+      .attr("stroke", "#252830").attr("stroke-width", 1).attr("stroke-opacity", 0.6);
 
-    /* nodes */
-    const node = g
-      .append("g")
-      .selectAll<SVGGElement, any>("g")
-      .data(nodes)
-      .join("g")
-      .call(
-        d3
-          .drag<SVGGElement, any>()
-          .on("start", (event, d: any) => {
-            if (!event.active) simulation.alphaTarget(0.3).restart();
-            d.fx = d.x;
-            d.fy = d.y;
-          })
-          .on("drag", (event, d: any) => {
-            d.fx = event.x;
-            d.fy = event.y;
-          })
-          .on("end", (event, d: any) => {
-            if (!event.active) simulation.alphaTarget(0);
-            d.fx = null;
-            d.fy = null;
-          }) as any,
-      );
+    const node = g.append("g").selectAll<SVGGElement, any>("g").data(nodes).join("g")
+      .call(d3.drag<SVGGElement, any>()
+        .on("start", (event, d: any) => { if (!event.active) simulation.alphaTarget(0.3).restart(); d.fx = d.x; d.fy = d.y; })
+        .on("drag", (event, d: any) => { d.fx = event.x; d.fy = event.y; })
+        .on("end", (event, d: any) => { if (!event.active) simulation.alphaTarget(0); d.fx = null; d.fy = null; }) as any);
+    nodeSelRef.current = node;
 
     node.each(function (d: any) {
       const el = d3.select(this);
       const r = nodeR(d.object_type);
-      const statusFill = STATUS_FILL[d.status];
-      const baseFill = TYPE_FILL[d.object_type] ?? "#8a919e";
-      const op = d.status === "TRIPPED" ? 0.3 : 0.7;
-
-      let fill = statusFill || baseFill;
-
-      if (d.object_type === "Generator") {
-        const genType = d.properties?.gen_type as string | undefined;
-        if (genType && GEN_TYPE_COLOR[genType]) fill = GEN_TYPE_COLOR[genType];
-        if (statusFill) fill = statusFill;
-      }
-
-      const objType: string = d.object_type;
-
-      switch (objType) {
+      switch (d.object_type as string) {
         case "GridSystem":
-          el.append("circle")
-            .attr("r", r)
-            .attr("fill", fill)
-            .attr("fill-opacity", op)
-            .attr("stroke", fill)
-            .attr("stroke-width", 1.5);
+          el.append("circle").attr("class", "node-shape").attr("r", r).attr("stroke-width", 1.5);
           break;
-
         case "Region":
-          el.append("rect")
-            .attr("x", -r)
-            .attr("y", -r * 0.6)
-            .attr("width", r * 2)
-            .attr("height", r * 1.2)
-            .attr("rx", 5)
-            .attr("fill", fill)
-            .attr("fill-opacity", op)
-            .attr("stroke", fill)
-            .attr("stroke-width", 1);
+          el.append("rect").attr("class", "node-shape").attr("x", -r).attr("y", -r * 0.6)
+            .attr("width", r * 2).attr("height", r * 1.2).attr("rx", 5).attr("stroke-width", 1);
           break;
-
         case "Substation":
-          el.append("rect")
-            .attr("x", -r)
-            .attr("y", -r)
-            .attr("width", r * 2)
-            .attr("height", r * 2)
-            .attr("rx", 3)
-            .attr("fill", "#1d2128")
-            .attr("fill-opacity", op)
-            .attr("stroke", fill)
-            .attr("stroke-width", 1.5);
+          el.append("rect").attr("class", "node-shape").attr("x", -r).attr("y", -r)
+            .attr("width", r * 2).attr("height", r * 2).attr("rx", 3).attr("stroke-width", 1.5);
           break;
-
         case "Generator":
         case "Transformer":
-          el.append("rect")
-            .attr("x", -r)
-            .attr("y", -r)
-            .attr("width", r * 2)
-            .attr("height", r * 2)
-            .attr("transform", "rotate(45)")
-            .attr("fill", fill)
-            .attr("fill-opacity", op)
-            .attr("stroke", fill)
-            .attr("stroke-width", 1);
+          el.append("rect").attr("class", "node-shape").attr("x", -r).attr("y", -r)
+            .attr("width", r * 2).attr("height", r * 2).attr("transform", "rotate(45)").attr("stroke-width", 1);
           break;
-
         default:
-          el.append("circle")
-            .attr("r", r)
-            .attr("fill", fill)
-            .attr("fill-opacity", op)
-            .attr("stroke", fill)
-            .attr("stroke-width", 0.5);
+          el.append("circle").attr("class", "node-shape").attr("r", r).attr("stroke-width", 0.5);
       }
     });
+    applyStatus(node);
 
-    node
-      .append("text")
+    node.append("text")
       .attr("dy", (d: any) => nodeR(d.object_type) + 12)
-      .attr("text-anchor", "middle")
-      .attr("fill", "#8a919e")
-      .attr("font-family", "var(--font-mono)")
-      .attr("font-size", "8px")
+      .attr("text-anchor", "middle").attr("fill", "#8a919e")
+      .attr("font-family", "var(--font-mono)").attr("font-size", "8px")
       .text((d: any) => d.display_name);
 
     node.on("click", (event, d: any) => {
       event.stopPropagation();
       const rect = svgRef.current!.getBoundingClientRect();
-      setTooltip({
-        x: event.clientX - rect.left,
-        y: event.clientY - rect.top,
-        asset: d,
-      });
+      setTooltip({ x: event.clientX - rect.left, y: event.clientY - rect.top, asset: d });
     });
-
-    svg.on("click", (event) => {
-      if (event.target === svgRef.current) setTooltip(null);
-    });
+    svg.on("click", (event) => { if (event.target === svgRef.current) setTooltip(null); });
 
     simulation.on("tick", () => {
-      link
-        .attr("x1", (d: any) => d.source.x)
-        .attr("y1", (d: any) => d.source.y)
-        .attr("x2", (d: any) => d.target.x)
-        .attr("y2", (d: any) => d.target.y);
+      link.attr("x1", (d: any) => d.source.x).attr("y1", (d: any) => d.source.y)
+        .attr("x2", (d: any) => d.target.x).attr("y2", (d: any) => d.target.y);
       node.attr("transform", (d: any) => `translate(${d.x},${d.y})`);
     });
-
-    return () => {
-      simulation.stop();
-    };
   }, [ontology]);
+
+  // --- live status update in place (no re-layout) on every poll ---
+  useEffect(() => {
+    const node = nodeSelRef.current;
+    if (!node || !ontology) return;
+    const statusByRid = new Map(ontology.nodes.map((n) => [n.rid, n.status]));
+    node.each((d: any) => { d.status = statusByRid.get(d.id) ?? d.status; });
+    applyStatus(node);
+  }, [ontology]);
+
+  useEffect(() => () => { simRef.current?.stop(); }, []);
 
   const nc = ontology?.nodes.length ?? 0;
   const ec = ontology?.edges.length ?? 0;
-  const tc = ontology
-    ? new Set(ontology.nodes.map((n) => n.object_type)).size
+  const abnormal = ontology
+    ? ontology.nodes.filter((n) => n.status !== "NOMINAL").length
     : 0;
 
   return (
     <div className="flex flex-col h-full relative">
       <div className="px-3 py-1.5 border-b border-border-strong bg-bg-tertiary">
         <div className="font-mono text-[10px] text-text-muted uppercase tracking-widest">
-          <span className="text-accent-blue">02</span> Ontology · Propagation
+          <span className="text-accent-blue">02</span> Ontology · Live Status
         </div>
         <div className="font-mono text-[9px] text-text-muted">
-          {nc} objects · {ec} links · {tc} types
+          {nc} objects · {ec} links ·{" "}
+          <span className={abnormal > 0 ? "text-accent-yellow" : "text-accent-green"}>
+            {abnormal} non-nominal
+          </span>
         </div>
       </div>
 
       <div className="flex-1 relative">
         <svg ref={svgRef} className="w-full h-full" />
-
         {tooltip && (
           <div
             className="absolute bg-bg-elevated border border-border-strong p-2 rounded shadow-lg max-w-[240px] z-10"
             style={{ left: tooltip.x + 10, top: tooltip.y + 10 }}
           >
-            <div className="font-mono text-[10px] text-text-code mb-1">
-              {tooltip.asset.display_name}
-            </div>
-            <div className="font-mono text-[9px] text-text-muted mb-1 break-all">
-              {tooltip.asset.rid}
-            </div>
+            <div className="font-mono text-[10px] text-text-code mb-1">{tooltip.asset.display_name}</div>
+            <div className="font-mono text-[9px] text-text-muted mb-1 break-all">{tooltip.asset.rid}</div>
             <div className="font-mono text-[9px] text-text-secondary">
-              Type:{" "}
-              <span className="text-text-primary">
-                {tooltip.asset.object_type}
-              </span>
+              Type: <span className="text-text-primary">{tooltip.asset.object_type}</span>
             </div>
             <div className="font-mono text-[9px] text-text-secondary">
               Status:{" "}
-              <span
-                className={
-                  tooltip.asset.status === "CRITICAL" ||
-                  tooltip.asset.status === "OVERLOADED"
-                    ? "text-accent-red"
-                    : tooltip.asset.status === "DEGRADED"
-                      ? "text-accent-yellow"
-                      : "text-accent-green"
-                }
-              >
+              <span className={
+                tooltip.asset.status === "CRITICAL" || tooltip.asset.status === "OVERLOADED"
+                  ? "text-accent-red"
+                  : tooltip.asset.status === "DEGRADED" || tooltip.asset.status === "TRIPPED"
+                    ? "text-accent-yellow" : "text-accent-green"
+              }>
                 {tooltip.asset.status}
               </span>
             </div>
             <pre className="font-mono text-[8px] text-text-secondary mt-1 whitespace-pre-wrap break-all max-h-24 overflow-y-auto">
               {JSON.stringify(tooltip.asset.properties, null, 1)}
             </pre>
-            <button
-              onClick={() => setTooltip(null)}
-              className="font-mono text-[8px] text-text-muted mt-1 hover:text-text-primary"
-            >
+            <button onClick={() => setTooltip(null)} className="font-mono text-[8px] text-text-muted mt-1 hover:text-text-primary">
               [close]
             </button>
           </div>

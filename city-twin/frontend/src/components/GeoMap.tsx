@@ -1,20 +1,11 @@
 import { useEffect, useRef } from "react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
-import { BUS_GEO_MAP } from "../data/cityGeo";
+import { ATLANTA_BUS_LATLNG } from "../data/atlantaGeo";
 import { API_BASE } from "../hooks/useGridStream";
 import type { GridState } from "../types/grid";
 
-// Atlanta metro bbox the real infrastructure was fetched for (S, W, N, E).
-const BBOX = { s: 33.55, w: -84.66, n: 34.06, e: -84.05 };
-const SVG_W = 900;
-const SVG_H = 700;
-
-function toLatLng(x: number, y: number): [number, number] {
-  const lng = BBOX.w + (x / SVG_W) * (BBOX.e - BBOX.w);
-  const lat = BBOX.n - (y / SVG_H) * (BBOX.n - BBOX.s);
-  return [lat, lng];
-}
+const ATLANTA_CENTER: [number, number] = [33.75, -84.39];
 
 const STATUS_COLOR: Record<string, string> = {
   normal: "#00c97a",
@@ -45,12 +36,15 @@ export default function GeoMap({ gridState }: { gridState: GridState | null }) {
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
     const map = L.map(containerRef.current, {
-      center: [(BBOX.s + BBOX.n) / 2, (BBOX.w + BBOX.e) / 2],
+      center: ATLANTA_CENTER,
       zoom: 10,
       zoomControl: true,
       preferCanvas: true,
     });
     mapRef.current = map;
+    // Frame the map to the whole simulated grid footprint.
+    const allPts = Object.values(ATLANTA_BUS_LATLNG) as [number, number][];
+    map.fitBounds(L.latLngBounds(allPts).pad(0.08));
 
     L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", {
       subdomains: "abcd",
@@ -106,13 +100,13 @@ export default function GeoMap({ gridState }: { gridState: GridState | null }) {
     lineLayer.clearLayers();
     const lines = gridState.lines;
     for (const t of topoRef.current) {
-      const a = BUS_GEO_MAP.get(t.from_bus);
-      const b = BUS_GEO_MAP.get(t.to_bus);
+      const a = ATLANTA_BUS_LATLNG[t.from_bus];
+      const b = ATLANTA_BUS_LATLNG[t.to_bus];
       const st = lines[t.index];
       if (!a || !b || !st) continue;
       const tripped = st.tripped;
       const loadFrac = Math.min(Math.max(st.flow_pct_of_limit, 0), 1);
-      L.polyline([toLatLng(a.x, a.y), toLatLng(b.x, b.y)], {
+      L.polyline([a, b], {
         color: tripped ? "#464c58" : lineColor(st.flow_pct_of_limit),
         // opacity tracks live loading so flows visibly vary even when "green"
         weight: (t.voltage_kv >= 300 ? 2.5 : t.voltage_kv >= 100 ? 1.6 : 0.9) + loadFrac * 1.2,
@@ -125,11 +119,11 @@ export default function GeoMap({ gridState }: { gridState: GridState | null }) {
     busLayer.clearLayers();
     const genBuses = new Set(gridState.generators.map((g) => g.bus_id));
     for (const bus of gridState.buses) {
-      const geo = BUS_GEO_MAP.get(bus.id);
-      if (!geo) continue;
+      const latlng = ATLANTA_BUS_LATLNG[bus.id];
+      if (!latlng) continue;
       const isGen = genBuses.has(bus.id);
       const tier = bus.voltage_kv >= 300 ? 3 : bus.voltage_kv >= 100 ? 2 : 1;
-      L.circleMarker(toLatLng(geo.x, geo.y), {
+      L.circleMarker(latlng, {
         radius: tier === 3 ? 6 : tier === 2 ? 4 : 2.6,
         fillColor: STATUS_COLOR[bus.status] ?? "#8a919e",
         fillOpacity: 0.92,

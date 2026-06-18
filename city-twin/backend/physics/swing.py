@@ -13,6 +13,7 @@ Each simulation tick:
 from __future__ import annotations
 
 import math
+import random
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -127,12 +128,17 @@ class GridSimulator:
     EMIT_EVERY = 5       # emit state every 5 ticks → 100 ms wall-clock
 
     def __init__(self, *, protection_enabled: bool = False,
-                 governor_enabled: bool = False) -> None:
+                 governor_enabled: bool = False, ambient_enabled: bool = False) -> None:
         self._sim_time: float = 0.0
         self._step_count: int = 0
         self._powerflow = ACPowerFlow()
         self._protection = ProtectionSystem() if protection_enabled else None
         self._governor = TurbineGovernor() if governor_enabled else None
+        # Ambient demand variation makes the live grid breathe (loadings,
+        # voltages and statuses drift) without manual fault injection. Opt-in so
+        # the evaluation harness and tests stay deterministic.
+        self._ambient_enabled = ambient_enabled
+        self._ambient_factor = 1.0
 
         # Instantiate generator models from the network config
         self._generators: list[GeneratorModel] = []
@@ -169,7 +175,7 @@ class GridSimulator:
     def _solve_and_sync(self) -> None:
         """Run AC power flow and sync Pe / delta back to generators."""
         gen_p = {g.bus_id: g.p_mech_mw for g in self._generators if g.online}
-        load_p = {bid: p for bid, p in self._p_load.items() if p > 0}
+        load_p = {bid: p for bid, p in self._effective_load().items() if p > 0}
 
         result = self._powerflow.solve(
             gen_p_mw=gen_p,
@@ -234,6 +240,28 @@ class GridSimulator:
             if gen.online and gen.inertia_M <= 0:
                 gen.step(dt, freq)
 
+    def _update_ambient(self) -> None:
+        """Slow demand swing + jitter so the live grid evolves on its own.
+
+        Two superimposed sinusoids (≈75 s and ≈210 s) plus small noise push
+        total load up and down by ~±13%, periodically stressing lines and buses
+        past their thresholds (and relaxing again) — driving real status changes
+        through the ontology, map, alerts and decision engine without any manual
+        fault injection.
+        """
+        if not self._ambient_enabled:
+            self._ambient_factor = 1.0
+            return
+        t = self._sim_time
+        swing = (0.09 * math.sin(2.0 * math.pi * t / 75.0)
+                 + 0.045 * math.sin(2.0 * math.pi * t / 210.0 + 1.3))
+        noise = random.uniform(-0.015, 0.015)
+        self._ambient_factor = max(0.6, 1.0 + swing + noise)
+
+    def _effective_load(self) -> dict[int, float]:
+        f = self._ambient_factor
+        return {bid: p * f for bid, p in self._p_load.items()}
+
     def _system_frequency(self) -> float:
         """Inertia-weighted mean frequency across all online synchronous machines."""
         online = [g for g in self._generators if g.online and g.inertia_M > 0]
@@ -255,6 +283,7 @@ class GridSimulator:
         Returns a :class:`GridState` snapshot every ``EMIT_EVERY`` ticks,
         ``None`` otherwise.
         """
+        self._update_ambient()
         self._swing_step(self.RK4_DT)
         if self._governor is not None:
             freq = self._system_frequency()
@@ -305,6 +334,7 @@ class GridSimulator:
                 )
 
         # --- buses --------------------------------------------------------
+        eff_load = self._effective_load()
         buses: list[BusState] = []
         for i, bus in enumerate(BUSES):
             vm = ac.bus_vm_pu[i] if has_ac else 1.0
@@ -321,7 +351,7 @@ class GridSimulator:
                 voltage_angle_deg=round(va, 4),
                 voltage_magnitude_pu=round(vm, 4),
                 power_generation_mw=round(gen_by_bus.get(bus.id, 0.0), 2),
-                power_load_mw=round(self._p_load.get(bus.id, 0.0), 2),
+                power_load_mw=round(eff_load.get(bus.id, 0.0), 2),
                 voltage_kv=bus.voltage_kv,
                 status=status,
             ))
@@ -390,7 +420,7 @@ class GridSimulator:
         # --- aggregates ---------------------------------------------------
         freq = self._system_frequency()
         total_gen = sum(g.p_electrical_mw for g in self._generators if g.online)
-        total_load = sum(self._p_load.values())
+        total_load = sum(eff_load.values())
         total_loss = ac.total_loss_mw if has_ac else 0.0
 
         # --- alerts -------------------------------------------------------

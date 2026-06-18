@@ -239,7 +239,8 @@ async def lifespan(app: FastAPI):
 
     simulator = GridSimulator(
         protection_enabled=os.getenv("GRID_PROTECTION", "0") == "1",
-        governor_enabled=os.getenv("GRID_GOVERNOR", "0") == "1",
+        governor_enabled=os.getenv("GRID_GOVERNOR", "1") == "1",
+        ambient_enabled=os.getenv("GRID_AMBIENT", "1") == "1",
     )
     fault_handler = FaultHandler(simulator)
     ontology_store = OntologyStore()
