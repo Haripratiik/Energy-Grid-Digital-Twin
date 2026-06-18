@@ -23,7 +23,8 @@ Every claim below is validated against a benchmark or analytical result, or meas
 - **Renewable integration & inertia** — a System Frequency Response model shows how falling inertia (renewables displacing synchronous machines) pushes RoCoF past grid-code limits, and how **grid-forming inverters** restore it. → [Renewable Integration](#renewable-integration--inertia--grid-forming-inverters)
 - **Learned world model** — a graph neural network trained on simulated fault trajectories, benchmarked honestly against baselines for grid-security prediction.
 - **AI with a physics safety net** — every proposed action is re-checked by AC power flow before it executes ("AI proposes, physics guarantees safety"); a verification can overrule even an operator approval.
-- **Geographic view** — the simulated grid overlaid on *real* Atlanta-metro transmission infrastructure (lines/substations/plants from OpenStreetMap) on a dark MapLibre basemap.
+- **Geographic view** — the simulated grid placed at *real* Atlanta coordinates (Buckhead, Midtown, Hartsfield-Jackson, Plant Vogtle, Buford Dam…) over real OpenStreetMap infrastructure on a dark basemap.
+- **Live ambient demand** — total load follows a *real recorded* weekly load profile (NREL RTS-GMLC), so loadings, voltages, and asset statuses evolve on their own (daily ramp + evening peak) — the grid breathes without manual fault injection.
 
 ---
 

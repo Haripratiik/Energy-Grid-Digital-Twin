@@ -21,6 +21,7 @@ from pydantic import BaseModel, Field
 
 from .ac_powerflow import ACPowerFlow, ACResult
 from .governor import TurbineGovernor
+from .load_profile import load_multiplier
 from .protection import ProtectionSystem
 from .generators.base import GeneratorModel
 from .generators.gas import GasGenerator
@@ -241,22 +242,21 @@ class GridSimulator:
                 gen.step(dt, freq)
 
     def _update_ambient(self) -> None:
-        """Slow demand swing + jitter so the live grid evolves on its own.
+        """Drive total demand from a REAL recorded load profile (+ jitter).
 
-        Two superimposed sinusoids (≈75 s and ≈210 s) plus small noise push
-        total load up and down by ~±13%, periodically stressing lines and buses
-        past their thresholds (and relaxing again) — driving real status changes
-        through the ontology, map, alerts and decision engine without any manual
-        fault injection.
+        Uses the NREL RTS-GMLC weekly demand shape (see ``load_profile``): the
+        genuine daily structure (overnight valley, morning ramp, evening peak)
+        and weekday/weekend variation play out over minutes, periodically
+        stressing lines/buses past their thresholds and relaxing again — so the
+        ontology, map, alerts and decision engine all evolve on their own,
+        without any manual fault injection.
         """
         if not self._ambient_enabled:
             self._ambient_factor = 1.0
             return
-        t = self._sim_time
-        swing = (0.09 * math.sin(2.0 * math.pi * t / 75.0)
-                 + 0.045 * math.sin(2.0 * math.pi * t / 210.0 + 1.3))
-        noise = random.uniform(-0.015, 0.015)
-        self._ambient_factor = max(0.6, 1.0 + swing + noise)
+        base = load_multiplier(self._sim_time)
+        noise = random.uniform(-0.012, 0.012)   # minute-scale demand jitter
+        self._ambient_factor = max(0.6, base + noise)
 
     def _effective_load(self) -> dict[int, float]:
         f = self._ambient_factor
