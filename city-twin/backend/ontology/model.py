@@ -1,7 +1,7 @@
 """
 Ontology Data Models
 ====================
-Pydantic v2 schemas for the Palantir Foundry-style ontology that wraps the
+Pydantic v2 schemas for the object-graph ontology that wraps the
 city-scale 80-bus, multi-voltage-tier digital twin.  Every physical asset is
 represented as a typed ``GridAsset`` node with directional ``OntologyLink``
 edges.
@@ -10,7 +10,7 @@ edges.
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Literal, Optional
+from typing import Any, Literal
 
 from pydantic import BaseModel
 

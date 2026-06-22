@@ -146,9 +146,9 @@ export default function Header({
           <button
             onClick={onOpenTwin}
             className="font-mono text-[10px] px-2.5 py-1.5 uppercase tracking-wider border border-accent-green/60 text-accent-green hover:bg-accent-green hover:text-bg-primary transition-colors"
-            title="Digital twin — real-time state estimation (UKF)"
+            title="Grid analytics — digital twin (UKF), state estimation, inertia & grid-forming, fast N-1"
           >
-            Digital Twin
+            Analytics
           </button>
           <button
             onClick={onResetLayout}
@@ -242,7 +242,7 @@ export default function Header({
 
         {!demo.active && (
           <span className="font-mono text-[10px] text-text-muted tracking-widest uppercase hidden lg:inline shrink-0">
-            Palantir AIP · ADE
+            Autonomous Decision Engine
           </span>
         )}
       </div>

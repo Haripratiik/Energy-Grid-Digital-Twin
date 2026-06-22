@@ -1,19 +1,18 @@
 """
-Export simulation data as CSV files suitable for uploading to Palantir Foundry.
+Export simulation data as CSV files for external analysis or a data warehouse.
 
-Generates static topology + a time-series of simulation snapshots that you can
-upload as Foundry datasets, then model in the Ontology.
+Generates static topology plus a time-series of simulation snapshots that map
+cleanly onto the object types in the ontology.
 
 Usage:
     cd city-twin/backend
-    python export_foundry_datasets.py
+    python export_datasets.py
 
-Outputs go to ./foundry_export/
+Outputs go to ./data_export/
 """
 
 import csv
 import os
-import time
 import uuid
 from datetime import datetime, timezone, timedelta
 
@@ -21,7 +20,7 @@ from physics.swing import GridSimulator
 from physics.network import GENERATORS_CONFIG, BUSES, LINES, TRANSFORMERS
 from ontology.store import AlertManager
 
-OUT_DIR = os.path.join(os.path.dirname(__file__), "foundry_export")
+OUT_DIR = os.path.join(os.path.dirname(__file__), "data_export")
 os.makedirs(OUT_DIR, exist_ok=True)
 
 SNAPSHOT_COUNT = 60
@@ -165,7 +164,7 @@ def export_atlanta_districts():
 
 
 if __name__ == "__main__":
-    print("Exporting Foundry datasets...")
+    print("Exporting datasets...")
     print()
     print("[Static topology]")
     export_buses()
@@ -179,7 +178,7 @@ if __name__ == "__main__":
     print()
     print(f"Done. Files in: {os.path.abspath(OUT_DIR)}")
     print()
-    print("Upload these CSVs to Foundry as datasets, then define your Ontology:")
+    print("Each CSV maps to an object type in the ontology:")
     print("  - Object type: GridBus        (from grid_buses.csv)")
     print("  - Object type: Generator      (from grid_generators.csv)")
     print("  - Object type: PowerLine      (from grid_lines.csv)")

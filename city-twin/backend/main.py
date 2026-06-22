@@ -20,14 +20,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from ontology.model import GridAlert
 from ontology.store import AlertManager, OntologyStore
 from physics.contingency import ContingencyAnalyzer, ContingencyReport
+from physics.custom_grid import CustomGridSpec, simulate_custom_grid
 from physics.fault_handler import FaultHandler, FaultRequest, FaultType
 from physics.swing import GridSimulator, GridState
 from storage import GridStore
 from reasoning.engine import ReasoningEngine
-from decisions.models import AutonomousMode, ProposedAction
+from decisions.models import AutonomousMode
 from decisions.autonomous_engine import AutonomousEngine
 from chat.store import ChatStore, ChatMessage
 from chat.engine import ChatEngine
@@ -190,27 +190,47 @@ async def run_demo_scenario() -> None:
     ))
     await asyncio.sleep(4.0)
 
-    _demo_phase = "GRID-AI analysing cascade scenario"
-    logger.info("DEMO t=14s: Triggering GRID-AI analysis")
+    _demo_phase = "GRID-AI analysing — physics veto + self-correction"
+    logger.info("DEMO t=14s: GRID-AI analysis routed through the live verify+correct pipeline")
     state = simulator.get_state()
-    reasoning_engine._demo_mode = True
-    result = reasoning_engine.analyze(state, None, "AUTO_CRITICAL", "demo-cascade")
-    reasoning_engine._demo_mode = False
 
     from decisions.models import GridDecision
-    from decisions.risk_classifier import RiskClassifier
     from decisions.outcome_monitor import OutcomeMonitor
+    from decisions.risk_classifier import RiskClassifier
+    from reasoning.cached_responses import DEMO_PROPOSED_ACTIONS, DEMO_RISKY_ACTION
+
+    # Lead with a deliberately RISKY action so the run reliably demonstrates the
+    # physics verifier vetoing the AI and the AI self-correcting — through the
+    # EXACT same engine pipeline used live. The veto, the N-1 check and the
+    # re-verification are all real power-flow solves; only the first proposal is
+    # scripted so the safety mechanism is guaranteed to fire on camera. A second,
+    # benign action is included to show a clean physics-verified pass alongside.
+    safe_example = next((dict(a) for a in DEMO_PROPOSED_ACTIONS
+                         if a["action_type"] == "GEN_SETPOINT"), None)
+    proposals = [dict(DEMO_RISKY_ACTION)]
+    if safe_example:
+        proposals.append(safe_example)
+
+    loop = asyncio.get_event_loop()
+    resolved = await loop.run_in_executor(
+        None, autonomous_engine._resolve_alert_actions, state, proposals,
+        "AUTO_CRITICAL", "demo-cascade",
+    )
     pre_snap = OutcomeMonitor.capture_snapshot(state)
-    for pa_dict in result.proposed_actions:
-        pa = ProposedAction(**pa_dict)
-        risk = RiskClassifier.classify(pa)
+    for final_action, verdict, trace in resolved:
         decision = GridDecision(
-            risk_level=risk,
-            action=pa,
+            risk_level=RiskClassifier.classify(final_action),
+            action=final_action,
             triggered_by_alert_id="demo-cascade",
             pre_state_snapshot=pre_snap,
+            correction_trace=trace,
         )
-        autonomous_engine._apply_mode_policy(decision)
+        if verdict is not None:
+            decision.verification = verdict.model_dump()
+        if verdict is None or verdict.safe:
+            autonomous_engine._apply_mode_policy(decision)
+        else:
+            decision.status = "REJECTED"
         autonomous_engine.decision_log.record(decision)
 
     _demo_phase = "Decisions queued — monitoring response"
@@ -560,6 +580,7 @@ async def revert_decision(decision_id: str):
 # --- Real grid (OpenStreetMap topology) ---
 
 _real_grid_cache: Optional[dict] = None
+_real_ontology_cache: Optional[dict] = None
 
 
 @app.get("/real-grid")
@@ -572,6 +593,39 @@ async def real_grid():
         grid = await loop.run_in_executor(None, build_real_grid)
         _real_grid_cache = grid.model_dump()
     return _real_grid_cache
+
+
+@app.get("/real-grid/ontology")
+async def real_grid_ontology():
+    """Ontology graph over the REAL Georgia grid — real substations/lines as
+    objects (real topology; electrical params estimated)."""
+    global _real_ontology_cache
+    if _real_ontology_cache is None:
+        from physics.real_grid import build_real_ontology
+        loop = asyncio.get_event_loop()
+        _real_ontology_cache = await loop.run_in_executor(None, build_real_ontology)
+    return _real_ontology_cache
+
+
+_last_custom_sim: Optional[dict] = None
+
+
+@app.post("/custom-grid/simulate")
+async def custom_grid_simulate(spec: CustomGridSpec):
+    """Build + AC-solve a user-defined grid; return per-bus/-line state + ontology."""
+    global _last_custom_sim
+    loop = asyncio.get_event_loop()
+    result = await loop.run_in_executor(None, simulate_custom_grid, spec)
+    _last_custom_sim = result
+    return result
+
+
+@app.get("/custom-grid/ontology")
+async def custom_grid_ontology():
+    """Ontology of the most recently simulated custom grid (empty until one runs)."""
+    if _last_custom_sim is None:
+        return {"nodes": [], "edges": []}
+    return _last_custom_sim.get("ontology", {"nodes": [], "edges": []})
 
 
 # --- Topology (static) ---

@@ -332,6 +332,38 @@ export interface ChatMessage {
   timestamp: string;
 }
 
+/** Physics safety-verifier verdict (backend `decisions.safety_verifier.VerificationResult`). */
+export interface VerificationResult {
+  safe: boolean;
+  reason: string;
+  converged: boolean;
+  pre_severity: number;
+  post_severity: number;
+  pre_violations: number;
+  post_violations: number;
+  worst_voltage_pu?: number | null;
+  worst_loading_pct?: number | null;
+  // N-1 second gate
+  n1_checked: boolean;
+  n1_secure: boolean;
+  n1_pre_insecure: number;
+  n1_post_insecure: number;
+  n1_worst?: string | null;
+}
+
+/** One attempt in the LLM↔physics self-correction loop. */
+export interface CorrectionAttempt {
+  attempt: number;
+  action_type: string;
+  target_rid: string;
+  rationale: string;
+  safe: boolean;
+  reason: string;
+  pre_severity: number;
+  post_severity: number;
+  n1_post_insecure: number;
+}
+
 /** Matches backend `decisions.models.GridDecision` JSON. */
 export interface GridDecision {
   id: string;
@@ -346,4 +378,6 @@ export interface GridDecision {
   pre_state_snapshot?: Record<string, unknown>;
   post_state_snapshot?: Record<string, unknown> | null;
   outcome_delta: Record<string, number> | null;
+  verification?: VerificationResult | null;
+  correction_trace?: CorrectionAttempt[];
 }

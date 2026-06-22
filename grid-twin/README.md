@@ -1,71 +1,46 @@
-# Energy Grid Digital Twin — Palantir AIP/Foundry Demo
+# Grid Twin: IEEE 9-Bus Reference
 
-A production-grade **Energy Grid Digital Twin** demonstrating Palantir-style
-operational intelligence architecture: **Foundry (ontology/data ops) + AIP (LLM
-agent reasoning) + Gotham-style alert/action feed**.
+A compact reference implementation of the digital twin idea on the IEEE 9-bus test system, the standard academic benchmark in power systems. It pairs a JAX based physics core with an ontology layer, an alert and action feed, and an LLM reasoning engine, and serves a live operator console.
+
+This is the frozen reference. The primary, full featured application is [`city-twin/`](../city-twin/). Grid Twin is kept as a lighter example and as a way to compare reasoning backends (it uses Anthropic Claude, while city-twin uses OpenAI GPT-4o).
 
 ## Architecture
 
 ```
                        ┌──────────────────────────────────┐
-                       │         REACT FRONTEND           │
-                       │  GridTopology │ Ontology │ Console│
-                       └──────┬────────┬──────────┬───────┘
+                       │         REACT FRONTEND            │
+                       │  GridTopology │ Ontology │ Console │
+                       └──────┬────────┬──────────┬────────┘
                          SSE  │  REST  │   REST   │
-                       ┌──────▼────────▼──────────▼───────┐
+                       ┌──────▼────────▼──────────▼────────┐
                        │          FASTAPI BACKEND          │
                        │                                   │
-                       │  ┌─────────┐  ┌──────────────┐   │
+                       │  ┌─────────┐  ┌──────────────┐    │
                        │  │ Physics │  │   Ontology    │   │
                        │  │ Engine  │──│    Store      │   │
-                       │  │ (JAX)   │  │  (Foundry)   │   │
-                       │  └────┬────┘  └──────┬───────┘   │
-                       │       │              │           │
-                       │  ┌────▼──────────────▼───────┐   │
-                       │  │   Alert Manager (Gotham)   │   │
-                       │  └────────────┬──────────────┘   │
+                       │  │ (JAX)   │  │ (object graph)│   │
+                       │  └────┬────┘  └──────┬───────┘    │
+                       │       │              │            │
+                       │  ┌────▼──────────────▼───────┐    │
+                       │  │       Alert Manager        │   │
+                       │  └────────────┬──────────────┘    │
                        │               │                   │
-                       │  ┌────────────▼──────────────┐   │
-                       │  │  Reasoning Engine (AIP)    │   │
-                       │  │  Anthropic Claude Sonnet   │   │
-                       │  └───────────────────────────┘   │
+                       │  ┌────────────▼──────────────┐    │
+                       │  │      Reasoning Engine      │    │
+                       │  │   Anthropic Claude Sonnet  │    │
+                       │  └───────────────────────────┘    │
                        └──────────────────────────────────┘
-```
-
-## Palantir Product Mapping
-
-```
-Component                       Maps to Palantir Product
-────────────────────────────────────────────────────────
-Ontology layer (store.py)       Foundry Ontology
-Physics → ontology sync         Foundry data pipeline
-LLM reasoning engine            AIP Logic / AIP Agent Studio
-Alert feed                      Gotham event/threat tracking
-Operator console                Foundry Workshop application
-BFS propagation                 Ontology Object Explorer
 ```
 
 ## Physics
 
-The simulator solves DC power flow on the IEEE 9-bus test system via the nodal
-susceptance (B-matrix) method using JAX, coupled with swing equation rotor
-dynamics integrated via 4th-order Runge-Kutta at 10ms timesteps. System
-frequency is derived from the mean rotor speed deviation across all online
-generators.
+The simulator solves DC power flow on the IEEE 9-bus test system through the nodal susceptance (B matrix) method using JAX, coupled with swing equation rotor dynamics integrated by fourth order Runge-Kutta at 10 ms timesteps. System frequency is derived from the mean rotor speed deviation across all online generators.
 
-## Why This Architecture Matters
+## Why the ontology matters
 
-Palantir's core commercial thesis is that their Foundry Ontology acts as the
-"operating system for decisions" — turning raw sensor telemetry into governed,
-AI-queryable business objects. This demo embodies that thesis: raw physics
-telemetry is ingested into a typed ontology of real-world grid assets, enabling
-an LLM agent (GRID-AI) to reason over governed objects with full operational
-context rather than hallucinating in a vacuum. The alert feed mirrors Gotham's
-threat tracking UX, and the operator console mirrors a Foundry Workshop
-application. This is the exact pattern Palantir deploys for bp's Vertex
-platform and utility grid monitoring contracts.
+Raw physics telemetry is ingested into a typed ontology of grid assets, so the LLM reasoning agent reasons over governed objects with full operational context rather than over loose numbers. The alert feed tracks threshold violations as events, and the operator console presents the live state, the asset graph, and the reasoning output together.
 
-## How to Run
+## How to run
 
 ### Backend
 
@@ -76,8 +51,9 @@ uvicorn main:app --reload --port 8000
 ```
 
 Set your Anthropic API key in `backend/.env`:
+
 ```
-ANTHROPIC_API_KEY=sk-ant-...
+ANTHROPIC_API_KEY=your-anthropic-api-key
 ```
 
 ### Frontend
@@ -90,9 +66,6 @@ npm run dev
 
 Open `http://localhost:5173` in your browser.
 
-## Demo Scenario
+## Demo scenario
 
-Click **RUN DEMO SCENARIO** in the header bar to execute a pre-scripted cascade
-failure sequence: load surge → line overload → protection relay trip → cascade
-imminent → GRID-AI auto-analysis → angle instability. Click **RESTORE** to
-watch the system recover.
+Click Run Demo Scenario in the header to execute a pre scripted cascade sequence: a load surge, a line overload, a protection relay trip, a cascade warning, an automatic AI analysis, and angle instability. Click Restore to watch the system recover.

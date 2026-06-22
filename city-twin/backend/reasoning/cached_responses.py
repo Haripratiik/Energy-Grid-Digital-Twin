@@ -84,3 +84,31 @@ DEMO_PROPOSED_ACTIONS: list[dict] = [
         "reversible": True,
     },
 ]
+
+# A deliberately risky first proposal, used by the scripted demo to show the
+# physics verifier veto the AI and the AI then self-correct. Opening line 26
+# overloads the 132kV ring (see tests/test_safety_verifier.py).
+DEMO_RISKY_ACTION: dict = {
+    "action_type": "LINE_SWITCH",
+    "target_rid": "ri.city-grid.main.transmission-line.26",
+    "parameters": {"switch_open": True},
+    "rationale": "Open line 26 to isolate the overloaded corridor and stop the cascade.",
+    "confidence": 0.74,
+    "estimated_impact_mw": 0.0,
+    "reversible": False,
+}
+
+# The safe alternative the model returns after the verifier rejects the above.
+# Sheds the load that was spiked onto the stressed corridor — a remedy that
+# actually lowers the overload (NOT a setpoint on the slack bus, whose MW the
+# power flow ignores, which would be a physical no-op the verifier rubber-stamps).
+DEMO_CORRECTED_ACTION: dict = {
+    "action_type": "LOAD_SHED",
+    "target_rid": "ri.city-grid.main.load-bus.14",
+    "parameters": {"delta_mw": -45.0},
+    "rationale": ("Shed 45 MW of interruptible load at Bus 14 to relieve the overloaded "
+                  "corridor — keeps every line in service instead of opening one."),
+    "confidence": 0.86,
+    "estimated_impact_mw": -45.0,
+    "reversible": True,
+}

@@ -29,7 +29,7 @@ export default function App() {
           />
         </div>
 
-        {/* Panel 2: Foundry Ontology — 25% */}
+        {/* Panel 2: Ontology graph, 25% */}
         <div className="w-[25%] border-r border-border-subtle flex flex-col">
           <OntologyGraph
             ontology={ontology}
@@ -49,7 +49,7 @@ export default function App() {
 
       {/* Bottom watermark */}
       <div className="fixed bottom-2 right-4 font-mono text-[10px] text-text-muted tracking-widest">
-        PALANTIR AIP · FOUNDRY ONTOLOGY · DIGITAL TWIN
+        IEEE 9-BUS · ONTOLOGY · DIGITAL TWIN
       </div>
     </div>
   );

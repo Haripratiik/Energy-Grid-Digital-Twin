@@ -54,7 +54,7 @@ function PanelCard({ children }: { children: ReactNode }) {
 
 export default function App() {
   const { gridState, connectionStatus } = useGridStream();
-  const { ontology, fetchPropagation } = useOntology(gridState?.ontology_dirty ?? false);
+  const { ontology } = useOntology(gridState?.ontology_dirty ?? false);
   const { pending, log, mode, approve, reject, revert, toggleMode } = useDecisions();
   const demo = useDemoStatus();
 
@@ -62,6 +62,9 @@ export default function App() {
   const [twinOpen, setTwinOpen] = useState(false);
   const [appMode, setAppMode] = useState<"operations" | "testing">("operations");
   const [layout, setLayout] = useState<Layout[]>(loadLayout);
+  // One shared "which grid" selector that drives BOTH the topology panel and the
+  // ontology panel — they are two views of the same grid, not separate choices.
+  const [gridSource, setGridSource] = useState<"synthetic" | "real" | "custom">("synthetic");
 
   // Measure the grid container width ourselves (more reliable than WidthProvider
   // inside a flex/overflow container under React StrictMode).
@@ -128,8 +131,9 @@ export default function App() {
             <PanelCard>
               <GridTopology
                 gridState={gridState}
-                highlightedAsset={highlightedAsset}
                 testingMode={appMode === "testing"}
+                source={gridSource}
+                onSourceChange={setGridSource}
               />
             </PanelCard>
           </div>
@@ -137,8 +141,8 @@ export default function App() {
             <PanelCard>
               <OntologyGraph
                 ontology={ontology}
-                gridState={gridState}
-                fetchPropagation={fetchPropagation}
+                source={gridSource}
+                highlightedAsset={highlightedAsset}
               />
             </PanelCard>
           </div>

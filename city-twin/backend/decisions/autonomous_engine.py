@@ -3,7 +3,7 @@ import asyncio
 import logging
 import time
 from datetime import datetime, timedelta, timezone
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 
 from .models import AutonomousMode, GridDecision, ProposedAction, RiskLevel
 from .risk_classifier import RiskClassifier
@@ -22,6 +22,7 @@ CONTROLLED_COUNTDOWN_S = 15.0
 CRITICAL_AUTO_WINDOW_S = 8.0
 FULL_AUTO_DISPLAY_S = 3.0
 OUTCOME_WAIT_S = 5.0
+MAX_CORRECTIONS = 1   # physics-feedback re-proposals before the engine gives up
 
 
 class AutonomousEngine:
@@ -30,7 +31,8 @@ class AutonomousEngine:
         self._sim = simulator
         self._reasoning = reasoning
         self._executor = ActionExecutor(simulator)
-        self._verifier = SafetyVerifier()
+        self._verifier = SafetyVerifier()                # execution-time gate (event loop)
+        self._proposal_verifier = SafetyVerifier()       # proposal-time gate (worker thread)
         self._verify_actions = verify_actions
         self._log = DecisionLog()
         self._mode = AutonomousMode.SEMI
@@ -88,9 +90,19 @@ class AutonomousEngine:
         logger.info("AutonomousEngine: analyzing for %s alert %s (%s)", severity, alert_id[:8], alert_type)
 
         loop = asyncio.get_event_loop()
+        resolved = []
         try:
             result = await loop.run_in_executor(
                 None, self._reasoning.analyze, state, None, trigger_label, alert_id,
+            )
+            if not result or not result.proposed_actions:
+                return
+            # Verify each proposal and let the LLM self-correct against the
+            # physics feedback — all off the event loop (verify re-solves power
+            # flow + N-1; re-proposal calls the LLM).
+            resolved = await loop.run_in_executor(
+                None, self._resolve_alert_actions, state, result.proposed_actions,
+                trigger_label, alert_id,
             )
         except Exception:
             logger.exception("Analysis failed")
@@ -98,27 +110,107 @@ class AutonomousEngine:
         finally:
             self._analyzing = False
 
-        if not result or not result.proposed_actions:
-            return
-
         pre_snapshot = OutcomeMonitor.capture_snapshot(state)
-
-        for pa_dict in result.proposed_actions:
-            if isinstance(pa_dict, dict):
-                clean = {k: v for k, v in pa_dict.items() if k != "risk_level"}
-                proposed = ProposedAction(**clean)
-            else:
-                proposed = pa_dict
-            risk = RiskClassifier.classify(proposed)
+        for final_action, verdict, trace in resolved:
             decision = GridDecision(
-                risk_level=risk,
-                action=proposed,
+                risk_level=RiskClassifier.classify(final_action),
+                action=final_action,
                 triggered_by_alert_id=alert_id,
                 pre_state_snapshot=pre_snapshot,
+                correction_trace=trace,
             )
-
-            self._apply_mode_policy(decision)
+            if verdict is not None:
+                decision.verification = verdict.model_dump()
+            if verdict is None or verdict.safe:
+                self._apply_mode_policy(decision)
+            else:
+                decision.status = "REJECTED"
+                logger.info("Proposal rejected after %d attempt(s): %s",
+                            max(1, len(trace)), verdict.reason)
             self._log.record(decision)
+
+    # -- proposal-time verification + physics-feedback self-correction ------
+
+    def _resolve_alert_actions(self, state: GridState, proposed_actions: list,
+                               trigger_label: str, alert_id: str | None):
+        """Verify (and self-correct) each proposed action. Read-only — no execution.
+
+        Runs in a worker thread and uses a dedicated verifier, so it never races
+        the execution-time gate. Returns ``[(final_action, VerificationResult|None,
+        trace), ...]``.
+        """
+        out = []
+        for pa in proposed_actions:
+            action = self._coerce_action(pa)
+            if action is None:
+                continue
+            out.append(self._resolve_one(state, action, trigger_label, alert_id))
+        return out
+
+    def _resolve_one(self, state: GridState, proposed: ProposedAction,
+                     trigger_label: str, alert_id: str | None):
+        if not self._verify_actions:
+            return proposed, None, []
+        current = proposed
+        trace: list[dict] = []
+        result = self._proposal_verifier.verify(state, current, check_n1=True)
+        if result.safe:
+            return current, result, []          # no correction needed → no trace
+        attempt = 1
+        while not result.safe and attempt <= MAX_CORRECTIONS:
+            # Record the attempt that just got vetoed.
+            trace.append(self._trace_entry(attempt, current, result))
+            try:
+                alts = self._reasoning.repropose(
+                    state, current, result.reason, trigger_label, alert_id)
+            except Exception:
+                logger.exception("Re-proposal failed")
+                break
+            alt = self._coerce_action_list(alts)
+            if alt is None:
+                break                            # model gave no alternative — stop
+            current = alt
+            attempt += 1
+            result = self._proposal_verifier.verify(state, current, check_n1=True)
+            # Record the freshly-proposed attempt + its verdict (only here — never
+            # re-append the last vetoed entry, which would fabricate a phantom retry).
+            trace.append(self._trace_entry(attempt, current, result))
+        # A 1-entry trace means the model couldn't produce an alternative; that's a
+        # plain rejection, not a self-correction, so don't render it as a loop.
+        return current, result, (trace if len(trace) > 1 else [])
+
+    @staticmethod
+    def _coerce_action(pa) -> ProposedAction | None:
+        if isinstance(pa, ProposedAction):
+            return pa
+        if isinstance(pa, dict):
+            try:
+                return ProposedAction(**{k: v for k, v in pa.items() if k != "risk_level"})
+            except Exception:
+                return None
+        return pa if hasattr(pa, "action_type") else None
+
+    @classmethod
+    def _coerce_action_list(cls, alts) -> ProposedAction | None:
+        for a in alts or []:
+            act = cls._coerce_action(a)
+            if act is not None:
+                return act
+        return None
+
+    @staticmethod
+    def _trace_entry(attempt: int, action: ProposedAction, result) -> dict:
+        return {
+            "attempt": attempt,
+            "action_type": action.action_type,
+            "target_rid": action.target_rid,
+            "rationale": getattr(action, "rationale", ""),
+            "safe": result.safe,
+            "reason": result.reason,
+            "pre_severity": result.pre_severity,
+            "post_severity": result.post_severity,
+            "n1_post_insecure": result.n1_post_insecure,
+        }
 
     def _apply_mode_policy(self, decision: GridDecision) -> None:
         """Apply the autonomous mode policy to determine what happens to this decision."""
@@ -156,13 +248,18 @@ class AutonomousEngine:
         grid security — "AI proposes, physics guarantees safety."
         """
         if self._verify_actions:
+            # Fast steady-state gate on the *current* state right before mutating
+            # the grid. The richer proposal-time verdict (incl. N-1) is kept for
+            # display unless this fresh check newly rejects the action.
             result = self._verifier.verify(self._sim.get_state(), decision.action)
-            decision.verification = result.model_dump()
             if not result.safe:
+                decision.verification = result.model_dump()
                 decision.status = "REJECTED"
                 logger.warning("Safety verifier BLOCKED decision %s: %s",
                                decision.id[:8], result.reason)
                 return False
+            if decision.verification is None:
+                decision.verification = result.model_dump()
         return self._executor.execute(decision)
 
     def _auto_execute(self, decision: GridDecision) -> None:

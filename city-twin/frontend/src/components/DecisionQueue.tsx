@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import type { AutonomousMode, GridDecision, RiskLevel } from "../types/grid";
+import { VerdictBadge, CorrectionTrace } from "./VerificationView";
 
 interface Props {
   pending: GridDecision[];
@@ -63,24 +64,22 @@ function outcomeLabel(delta: Record<string, number> | null): {
 }
 
 function CountdownBar({ expiresAt }: { expiresAt: string }) {
-  const [remaining, setRemaining] = useState(() => {
-    const ms = new Date(expiresAt).getTime() - Date.now();
-    return Math.max(0, Math.floor(ms / 1000));
-  });
-  const [total] = useState(() => {
-    const ms = new Date(expiresAt).getTime() - Date.now();
-    return Math.max(1, Math.floor(ms / 1000));
-  });
+  // Guard against an invalid/missing timestamp — NaN would render "NaN s" / "NaN%".
+  const secsLeft = () => {
+    const t = new Date(expiresAt).getTime();
+    if (Number.isNaN(t)) return 0;
+    return Math.max(0, Math.floor((t - Date.now()) / 1000));
+  };
+  const [remaining, setRemaining] = useState(secsLeft);
+  const [total] = useState(() => Math.max(1, secsLeft()));
 
   useEffect(() => {
-    const iv = setInterval(() => {
-      const ms = new Date(expiresAt).getTime() - Date.now();
-      setRemaining(Math.max(0, Math.floor(ms / 1000)));
-    }, 1000);
+    const iv = setInterval(() => setRemaining(secsLeft()), 1000);
     return () => clearInterval(iv);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [expiresAt]);
 
-  const pct = Math.min(100, ((total - remaining) / total) * 100);
+  const pct = Math.min(100, Math.max(0, ((total - remaining) / total) * 100));
 
   return (
     <div className="mt-1.5">
@@ -216,6 +215,10 @@ export default function DecisionQueue({
                     </span>
                   )}
                 </div>
+
+                {/* self-correction trace + physics verdict */}
+                <CorrectionTrace trace={d.correction_trace} />
+                {d.verification && <VerdictBadge v={d.verification} />}
 
                 {/* countdown bar for auto-executing decisions */}
                 {showCountdown && (

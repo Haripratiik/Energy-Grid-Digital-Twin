@@ -11,7 +11,7 @@ Design
   threads).  Its only input is a :class:`GridState` snapshot, so the exact same
   code path is reusable offline for dataset generation / evaluation.
 * **Two-stage screening for cost.**  Running full Newton-Raphson AC power flow
-  for all ~124 single-element outages every cycle is too slow for the real-time
+  for all 123 single-element outages every cycle is too slow for the real-time
   loop.  We first *screen* every contingency with a fast linear DC power flow
   (thermal overloads only — DC has no voltage information), then *verify* the
   worst ``ac_verify_k`` screened cases plus every non-converging case with full
@@ -175,6 +175,43 @@ class ContingencyAnalyzer:
             results=results,
         )
 
+    def screen_operating_point(
+        self, gen_p_mw: dict[int, float], load_p_mw: dict[int, float],
+        tripped_lines: set[int], tripped_trafos: set[int], *, ac_verify_k: int | None = None,
+    ) -> tuple[int, float, Optional[str]]:
+        """Fast N-1 screen of a raw operating point (for the safety verifier).
+
+        Returns ``(n_insecure, worst_severity, worst_label)``: how many single
+        further failures would violate a limit, and the worst one. Lets the
+        verifier ask "does this proposed action keep the grid N-1 secure?" —
+        i.e. robust to the *next* failure — not just secure right now.
+
+        ``ac_verify_k`` defaults to this analyzer's configured depth, so the
+        constructor argument actually controls screening depth.
+        """
+        if ac_verify_k is None:
+            ac_verify_k = self._ac_verify_k
+        op = _OperatingPoint(dict(gen_p_mw), dict(load_p_mw),
+                             set(tripped_lines), set(tripped_trafos))
+        candidates = self._candidates(op)
+        if not candidates:
+            return 0, 0.0, None
+        screen = self._dc_screen(op, candidates)
+        ranked = sorted(candidates, key=lambda c: screen.get(c[0], 0.0), reverse=True)
+        verify_set = {c[0] for c in ranked[:ac_verify_k]}
+        verify_set |= {cid for (cid, kind, _) in candidates if kind == ContingencyKind.GENERATOR}
+
+        n_insecure, worst_sev, worst_label = 0, 0.0, None
+        for cid, kind, label in candidates:
+            if cid not in verify_set:
+                continue
+            r = self._ac_evaluate(op, cid, kind, label)
+            if r.outcome != ContingencyOutcome.SECURE:
+                n_insecure += 1
+            if r.severity > worst_sev:
+                worst_sev, worst_label = r.severity, label
+        return n_insecure, round(worst_sev, 2), worst_label
+
     # ------------------------------------------------------------------
     # Operating point from live state
     # ------------------------------------------------------------------
@@ -311,7 +348,13 @@ class ContingencyAnalyzer:
         res = self._pf.solve(gen_p_mw=gen_p, load_p_mw=op.load_p_mw,
                              tripped_lines=tl, tripped_trafos=tt)
 
-        if not res.converged:
+        # A NaN/inf result is a collapse: the threshold checks below are all False
+        # for NaN, so a garbage solution would otherwise score as SECURE.
+        if not res.converged or not (
+            np.all(np.isfinite(res.bus_vm_pu))
+            and np.all(np.isfinite(res.line_loading_pct))
+            and np.all(np.isfinite(res.trafo_loading_pct))
+        ):
             return ContingencyResult(
                 contingency_id=cid, kind=kind, label=label,
                 outcome=ContingencyOutcome.COLLAPSE,

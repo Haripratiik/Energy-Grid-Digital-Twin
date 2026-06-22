@@ -7,15 +7,11 @@ Falls back to demo responses when no API key is available.
 from __future__ import annotations
 
 import logging
-import uuid
-from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, Optional
 
 from pydantic import BaseModel
 
 from reasoning.cached_responses import (
-    DEMO_CASCADE_RESPONSE_TEXT,
-    DEMO_HEADLINE,
     DEMO_PROPOSED_ACTIONS,
     DEMO_WHAT_CHANGED,
 )
@@ -83,9 +79,12 @@ asks about grid status, reference the actual numbers.
 
 RESPONSE FORMAT (JSON, all fields required):
 
-message_text — Your conversational reply. This is the main text the \
-operator sees. Can be multiple paragraphs, use markdown for clarity. \
-Always answer the user's question directly here.
+message_text — Your reply, and the main text the operator sees. It is rendered \
+as markdown, so USE structure: open with a ONE-LINE direct answer, then (only \
+if useful) **bold** labels and `-` bullet lists for the specifics. Wrap every \
+asset ID, metric and number in backticks — e.g. `Bus 14`, `Line 5-6`, \
+`59.91 Hz`, `+12 MW`. No preamble, no restating the question, no sign-off. Lead \
+with the answer.
 
 what_changed — 0-4 short bullet strings about key telemetry observations. \
 Only include when grid status is noteworthy or the user asked about it. \
@@ -95,7 +94,7 @@ proposed_actions — Ordered list of corrective actions. Only include when \
 the grid needs attention or the user asked for recommendations. Empty list \
 is fine. Each action MUST have:
   action_type: LOAD_SHED | GEN_SETPOINT | LINE_SWITCH | TRANSFORMER_TAP | ISLANDING
-  target_rid: Palantir RID (e.g. "ri.city-grid.main.load-bus.14")
+  target_rid: Resource ID (RID), e.g. "ri.city-grid.main.load-bus.14"
   parameters: object with optional keys: delta_mw, target_pct, tap_position, switch_open
   rationale: 1-sentence justification
   confidence: 0.0-1.0

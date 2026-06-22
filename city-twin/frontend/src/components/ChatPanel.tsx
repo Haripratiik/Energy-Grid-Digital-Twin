@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useChat } from "../hooks/useChat";
+import MarkdownLite from "./MarkdownLite";
 import type {
   GridState,
   ChatMessage,
@@ -97,8 +98,8 @@ function AssistantMessage({ msg }: { msg: ChatMessage }) {
 
   return (
     <div className="space-y-2 max-w-full">
-      <div className="text-[12px] font-sans text-text-primary leading-relaxed whitespace-pre-wrap">
-        {msg.content}
+      <div className="text-[12px] font-sans text-text-secondary">
+        <MarkdownLite text={msg.content} />
       </div>
 
       {whatChanged.length > 0 && (

@@ -1,6 +1,6 @@
 """Fault injection handler for the city-grid simulator.
 
-Translates Palantir-style RID references into concrete
+Translates resource-identifier (RID) references into concrete
 :class:`~.swing.GridSimulator` mutations.
 
 RID examples
@@ -54,7 +54,7 @@ class FaultRequest(BaseModel):
 # ---------------------------------------------------------------------------
 
 def _parse_rid_index(rid: str) -> int:
-    """Extract the trailing integer from a Palantir-style RID string."""
+    """Extract the trailing integer from a resource-identifier (RID) string."""
     m = _RID_TAIL_RE.search(rid)
     if m is None:
         raise ValueError(f"Cannot extract numeric index from RID: {rid!r}")

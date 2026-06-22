@@ -33,7 +33,7 @@ class FaultRequest(BaseModel):
     target_rid: str = Field(
         ...,
         description=(
-            "Palantir-style RID for the target asset, e.g. "
+            "Resource identifier (RID) for the target asset, e.g. "
             "'ri.grid-asset.main.transmission-line.5-6' or "
             "'ri.grid-asset.main.generator.2'"
         ),

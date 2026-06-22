@@ -1,7 +1,7 @@
 """
 In-Memory Ontology Store & Alert Manager
 =========================================
-Maintains the Palantir Foundry-style ontology graph for the IEEE 9-bus digital
+Maintains the object-graph ontology for the IEEE 9-bus digital
 twin.  Every physics tick, ``OntologyStore.update_from_physics_state`` syncs
 simulator telemetry into typed ``GridAsset`` nodes while propagating status
 through the containment hierarchy.

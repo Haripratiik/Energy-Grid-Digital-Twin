@@ -1,0 +1,10 @@
+# Lint config for the city-twin backend.
+# High-signal only: pyflakes (F) catches real bugs — undefined names, unused
+# imports, f-strings without placeholders — and E9 catches syntax/runtime
+# errors. Pure style rules are intentionally left off to keep the signal high
+# and the gate meaningful.
+line-length = 100
+target-version = "py311"
+
+[lint]
+select = ["E9", "F"]

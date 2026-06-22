@@ -41,7 +41,7 @@ export default function TwinView({ open, onClose }: Props) {
           onClick={onClose}
         >
           <motion.div
-            className="w-full max-w-5xl max-h-[92vh] flex flex-col bg-bg-secondary border border-border-strong shadow-2xl"
+            className="w-full max-w-6xl max-h-[92vh] flex flex-col bg-bg-secondary border border-border-strong shadow-2xl"
             initial={reduce ? { opacity: 0 } : { opacity: 0, scale: 0.97, y: 8 }}
             animate={reduce ? { opacity: 1 } : { opacity: 1, scale: 1, y: 0 }}
             exit={reduce ? { opacity: 0 } : { opacity: 0, scale: 0.98 }}

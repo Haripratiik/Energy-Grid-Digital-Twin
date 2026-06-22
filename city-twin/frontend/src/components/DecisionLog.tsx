@@ -1,5 +1,6 @@
-import { useMemo, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import type { GridDecision, RiskLevel } from "../types/grid";
+import { VerdictBadge, CorrectionTrace } from "./VerificationView";
 
 interface Props {
   decisions: GridDecision[];
@@ -67,11 +68,22 @@ function outcomeText(
 
 export default function DecisionLog({ decisions, onRevert }: Props) {
   const [filter, setFilter] = useState<StatusFilter>("ALL");
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const toggle = (id: string) =>
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
 
   const filtered = useMemo(() => {
     const base =
       filter === "ALL" ? decisions : decisions.filter((d) => d.status === filter);
-    return base.slice(0, 100);
+    // Newest first, and keep the 100 MOST RECENT (not the 100 oldest, which is
+    // what a plain slice of an insertion-ordered list would show).
+    return [...base]
+      .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+      .slice(0, 100);
   }, [decisions, filter]);
 
   return (
@@ -103,7 +115,7 @@ export default function DecisionLog({ decisions, onRevert }: Props) {
         <table className="w-full text-left">
           <thead className="sticky top-0 bg-bg-tertiary z-10">
             <tr className="border-b border-border-subtle">
-              {["Time", "Risk", "Action", "Target", "Status", "By", "Outcome", ""].map(
+              {["Time", "Risk", "Action", "Target", "Status", "Physics", "By", "Outcome", ""].map(
                 (h) => (
                   <th
                     key={h}
@@ -120,11 +132,17 @@ export default function DecisionLog({ decisions, onRevert }: Props) {
               const outcome = outcomeText(d.outcome_delta);
               const canRevert =
                 d.status === "EXECUTED" && d.action.reversible !== false;
+              const hasDetail =
+                d.verification != null || (d.correction_trace?.length ?? 0) > 1;
+              const isOpen = expanded.has(d.id);
 
               return (
+                <Fragment key={d.id}>
                 <tr
-                  key={d.id}
-                  className="border-b border-border-subtle/50 hover:bg-bg-elevated/40 transition-colors"
+                  onClick={() => hasDetail && toggle(d.id)}
+                  className={`border-b border-border-subtle/50 hover:bg-bg-elevated/40 transition-colors ${
+                    hasDetail ? "cursor-pointer" : ""
+                  }`}
                 >
                   <td className="font-mono text-[10px] text-text-secondary px-2 py-1 whitespace-nowrap">
                     {formatTimestamp(d.timestamp)}
@@ -145,6 +163,22 @@ export default function DecisionLog({ decisions, onRevert }: Props) {
                   >
                     {d.status}
                   </td>
+                  <td className="px-2 py-1 whitespace-nowrap">
+                    {d.verification ? (
+                      <span
+                        title={d.verification.reason}
+                        className={`font-mono text-[9px] ${
+                          d.verification.safe ? "text-accent-green" : "text-accent-red"
+                        }`}
+                      >
+                        <span className="text-text-muted">{isOpen ? "▾ " : "▸ "}</span>
+                        {d.verification.safe ? "✓ verified" : "✕ blocked"}
+                        {d.correction_trace && d.correction_trace.length > 1 ? " ⟳" : ""}
+                      </span>
+                    ) : (
+                      <span className="font-mono text-[9px] text-text-muted">—</span>
+                    )}
+                  </td>
                   <td className="font-mono text-[10px] text-text-muted px-2 py-1">
                     {d.executed_by ?? "—"}
                   </td>
@@ -162,7 +196,10 @@ export default function DecisionLog({ decisions, onRevert }: Props) {
                   <td className="px-2 py-1">
                     {canRevert && (
                       <button
-                        onClick={() => onRevert(d.id)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onRevert(d.id);
+                        }}
                         className="font-mono text-[9px] px-2 py-0.5 border border-accent-red/40 text-accent-red hover:bg-accent-red/10 transition-colors uppercase tracking-wide"
                       >
                         Revert
@@ -170,12 +207,21 @@ export default function DecisionLog({ decisions, onRevert }: Props) {
                     )}
                   </td>
                 </tr>
+                {hasDetail && isOpen && (
+                  <tr className="bg-bg-primary/40">
+                    <td colSpan={9} className="px-3 pb-2 pt-0">
+                      <CorrectionTrace trace={d.correction_trace} />
+                      {d.verification && <VerdictBadge v={d.verification} />}
+                    </td>
+                  </tr>
+                )}
+                </Fragment>
               );
             })}
             {filtered.length === 0 && (
               <tr>
                 <td
-                  colSpan={8}
+                  colSpan={9}
                   className="text-center font-mono text-xs text-text-muted py-8"
                 >
                   No decisions match filter

@@ -11,8 +11,11 @@ export function useGridStream() {
     useState<ConnectionStatus>("connecting");
   const retryRef = useRef(1000);
   const eventSourceRef = useRef<EventSource | null>(null);
+  const reconnectRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const closedRef = useRef(false);
 
   const connect = useCallback(() => {
+    if (closedRef.current) return;
     if (eventSourceRef.current) {
       eventSourceRef.current.close();
     }
@@ -37,16 +40,20 @@ export function useGridStream() {
 
     es.onerror = () => {
       es.close();
+      if (closedRef.current) return;
       setConnectionStatus("disconnected");
       const delay = retryRef.current;
       retryRef.current = Math.min(delay * 2, 16000);
-      setTimeout(connect, delay);
+      reconnectRef.current = setTimeout(connect, delay);
     };
   }, []);
 
   useEffect(() => {
+    closedRef.current = false;
     connect();
     return () => {
+      closedRef.current = true;
+      if (reconnectRef.current) clearTimeout(reconnectRef.current);
       eventSourceRef.current?.close();
     };
   }, [connect]);

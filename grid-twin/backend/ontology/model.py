@@ -1,7 +1,7 @@
 """
 Ontology Data Models
 ====================
-Pydantic v2 schemas for the Palantir Foundry-style ontology that wraps the
+Pydantic v2 schemas for the object-graph ontology that wraps the
 IEEE 9-bus digital twin.  Every physical asset is represented as a typed
 ``GridAsset`` node with directional ``OntologyLink`` edges.
 """

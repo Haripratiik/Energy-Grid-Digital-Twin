@@ -16,6 +16,7 @@ Three reference policies, in increasing sophistication:
 
 from __future__ import annotations
 
+import random
 from collections import deque
 from typing import TYPE_CHECKING, Optional, Protocol
 
@@ -251,6 +252,66 @@ class GreedyRuleController:
             confidence=0.8,
             estimated_impact_mw=-round(shed, 1),
             reversible=True,
+        )]
+
+
+# ---------------------------------------------------------------------------
+
+class ExploratoryController:
+    """Randomised exploration policy for **dataset generation** (not comparison).
+
+    Reactive controllers (do-nothing, greedy) almost never act in nominal
+    conditions, so a dataset built from them is ~99% no-op — an action-conditioned
+    world model has nothing to learn the *effect of interventions* from. This
+    controller deliberately perturbs the grid every decision cycle with a random
+    valid action (a generator setpoint nudge or a load shed of random magnitude
+    and location), so the recorded trajectories densely cover
+    ``(state, action) → next-state`` transitions across the action space.
+
+    It owns a private RNG seeded at construction, so it is reproducible *and*
+    does not perturb the global RNG stream the physics stochasticity uses — two
+    runs with the same scenario seed see identical wind/solar regardless of the
+    controller's draws.
+    """
+
+    name = "exploratory"
+
+    def __init__(self, *, epsilon: float = 1.0, seed: int = 0,
+                 max_gen_delta_mw: float = 60.0, max_shed_mw: float = 40.0) -> None:
+        self.epsilon = epsilon
+        self.max_gen_delta_mw = max_gen_delta_mw
+        self.max_shed_mw = max_shed_mw
+        self._rng = random.Random(seed)
+
+    def decide(self, state: "GridState") -> list[ProposedAction]:
+        if self._rng.random() > self.epsilon:
+            return []
+        # Bias toward generator setpoints (the continuous control), with load
+        # shedding mixed in for coverage of the demand side.
+        if self._rng.random() < 0.6:
+            online = [g for g in state.generators if g.online]
+            if not online:
+                return []
+            g = self._rng.choice(online)
+            delta = self._rng.uniform(-self.max_gen_delta_mw, self.max_gen_delta_mw)
+            return [ProposedAction(
+                action_type="GEN_SETPOINT",
+                target_rid=f"ri.city-grid.main.generator.{g.bus_id}",
+                parameters={"delta_mw": round(delta, 1)},
+                rationale="exploratory setpoint perturbation (dataset generation)",
+                confidence=0.5, estimated_impact_mw=round(delta, 1), reversible=True,
+            )]
+        load_buses = [b for b in state.buses if b.power_load_mw > 5.0]
+        if not load_buses:
+            return []
+        b = self._rng.choice(load_buses)
+        shed = self._rng.uniform(5.0, min(self.max_shed_mw, b.power_load_mw))
+        return [ProposedAction(
+            action_type="LOAD_SHED",
+            target_rid=f"ri.city-grid.main.load-bus.{b.id}",
+            parameters={"delta_mw": -round(shed, 1)},
+            rationale="exploratory load shed (dataset generation)",
+            confidence=0.5, estimated_impact_mw=-round(shed, 1), reversible=True,
         )]
 
 

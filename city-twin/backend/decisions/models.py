@@ -34,7 +34,11 @@ class GridDecision(BaseModel):
     pre_state_snapshot: dict = Field(default_factory=dict)
     post_state_snapshot: Optional[dict] = None
     outcome_delta: Optional[dict] = None  # measured improvement/degradation
-    verification: Optional[dict] = None   # physics safety-verifier result
+    verification: Optional[dict] = None   # physics safety-verifier result (final action)
+    # When the verifier vetoes the model's first proposal, the LLM re-proposes
+    # against the physics feedback. Each entry records one attempt + its verdict,
+    # so the UI can show the AI self-correcting against the simulator.
+    correction_trace: list[dict] = Field(default_factory=list)
     timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 

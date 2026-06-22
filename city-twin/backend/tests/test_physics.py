@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import random
 
-import pytest
 
 from physics.ac_powerflow import ACPowerFlow
 from physics.network import GENERATORS_CONFIG, NOMINAL_FREQ_HZ, SLACK_BUS

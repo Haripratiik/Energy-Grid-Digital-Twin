@@ -17,6 +17,7 @@ from pydantic import BaseModel, Field
 
 from .cached_responses import (
     DEMO_CASCADE_RESPONSE_TEXT,
+    DEMO_CORRECTED_ACTION,
     DEMO_HEADLINE,
     DEMO_PROPOSED_ACTIONS,
     DEMO_WHAT_CHANGED,
@@ -123,7 +124,7 @@ situation_summary — 2 sentences max, technical assessment for the log.
 
 proposed_actions — Ordered list of corrective actions. Each action MUST have:
   action_type: LOAD_SHED | GEN_SETPOINT | LINE_SWITCH | TRANSFORMER_TAP | ISLANDING
-  target_rid: Palantir RID (e.g. "ri.city-grid.main.generator.8")
+  target_rid: resource ID (e.g. "ri.city-grid.main.generator.8")
   parameters: object with optional keys: delta_mw (float), target_pct (float), tap_position (int), switch_open (bool). Use whichever apply.
   rationale: 1-sentence technical justification
   confidence: 0.0-1.0
@@ -207,7 +208,8 @@ class ReasoningEngine:
         }
 
     @staticmethod
-    def _context_to_message(ctx: dict, user_query: str | None = None) -> str:
+    def _context_to_message(ctx: dict, user_query: str | None = None,
+                            feedback: str | None = None) -> str:
         parts = [
             (
                 f"Time: {ctx['sim_time_s']:.1f}s | "
@@ -241,6 +243,13 @@ class ReasoningEngine:
         )
         if user_query:
             parts.append(f"\nOperator question: {user_query}")
+        if feedback:
+            parts.append(
+                f"\nPHYSICS SAFETY FEEDBACK: {feedback}\n"
+                "Your previous action was REJECTED by the power-flow safety verifier. "
+                "Propose a DIFFERENT corrective action that keeps the grid secure — "
+                "do not repeat the rejected action. Prefer adding generation over shedding load."
+            )
         return "\n".join(parts)
 
     # -- risk enrichment ----------------------------------------------------
@@ -270,23 +279,39 @@ class ReasoningEngine:
         trigger_type: Literal["AUTO_CRITICAL", "AUTO_WARNING", "MANUAL"],
         alert_id: str | None = None,
         user_query: str | None = None,
+        feedback: str | None = None,
     ) -> ReasoningResult:
-        """Run reasoning over the current grid state and return a result."""
+        """Run reasoning over the current grid state and return a result.
+
+        When ``feedback`` is set, the model is re-prompted to propose a *different*
+        action after the physics verifier rejected its previous one.
+        """
         ctx = self._build_context(state, trigger_type)
 
         if self._demo_mode:
-            response_text = DEMO_CASCADE_RESPONSE_TEXT.strip()
-            proposed = [dict(a) for a in DEMO_PROPOSED_ACTIONS]
-            cascade_prob = 0.61
-            time_horizon = 20
-            headline = DEMO_HEADLINE
-            what_changed = list(DEMO_WHAT_CHANGED)
-            answer = None
+            if feedback:
+                # Self-correction in demo mode: a curated safe alternative.
+                response_text = ("Revised plan: ramp nuclear at Bus 1 to recover the deficit "
+                                 "without overloading a corridor.")
+                proposed = [dict(DEMO_CORRECTED_ACTION)]
+                cascade_prob, time_horizon = 0.18, 30
+                headline = "Revised: ramp generation, no new overload."
+                what_changed = ["Prior action vetoed by power-flow check",
+                                "Re-solving with added generation instead"]
+                answer = None
+            else:
+                response_text = DEMO_CASCADE_RESPONSE_TEXT.strip()
+                proposed = [dict(a) for a in DEMO_PROPOSED_ACTIONS]
+                cascade_prob = 0.61
+                time_horizon = 20
+                headline = DEMO_HEADLINE
+                what_changed = list(DEMO_WHAT_CHANGED)
+                answer = None
         else:
             (
                 response_text, proposed, cascade_prob, time_horizon,
                 headline, what_changed, answer,
-            ) = self._call_llm(ctx, user_query)
+            ) = self._call_llm(ctx, user_query, feedback)
 
         proposed = self._enrich_actions_with_risk(proposed)
 
@@ -310,8 +335,28 @@ class ReasoningEngine:
 
     # -- LLM call -----------------------------------------------------------
 
+    def repropose(
+        self,
+        state: GridState,
+        rejected_action,
+        reason: str,
+        trigger_type: Literal["AUTO_CRITICAL", "AUTO_WARNING", "MANUAL"],
+        alert_id: str | None = None,
+    ) -> list[dict]:
+        """Ask the model for an alternative after the verifier rejected an action.
+
+        ``rejected_action`` is a ProposedAction-like object. Returns the enriched
+        proposed-action dicts from the re-prompt (possibly empty).
+        """
+        feedback = (
+            f"The action {rejected_action.action_type} on {rejected_action.target_rid} "
+            f"was rejected. Verifier said: {reason}"
+        )
+        result = self.analyze(state, None, trigger_type, alert_id, feedback=feedback)
+        return result.proposed_actions
+
     def _call_llm(
-        self, ctx: dict, user_query: str | None = None,
+        self, ctx: dict, user_query: str | None = None, feedback: str | None = None,
     ) -> tuple[str, list[dict], float, int, str, list[str], str | None]:
         from shared.rate_limiter import openai_limiter
 
@@ -324,7 +369,7 @@ class ReasoningEngine:
             )
 
         client = self._get_client()
-        user_msg = self._context_to_message(ctx, user_query)
+        user_msg = self._context_to_message(ctx, user_query, feedback)
 
         try:
             response = client.beta.chat.completions.parse(

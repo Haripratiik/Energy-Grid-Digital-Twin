@@ -119,6 +119,34 @@ _CORE_GEN_KEYS = frozenset({
 
 
 # ---------------------------------------------------------------------------
+# Numerical integration
+# ---------------------------------------------------------------------------
+
+def rk4_step(state, deriv, dt):
+    """One classical fourth-order Runge-Kutta (RK4) step.
+
+    ``state`` is a tuple of scalars and ``deriv(state) -> tuple`` returns the
+    time-derivative of each component. Returns the advanced state tuple.
+
+    This is the single integrator used both by the live generators' swing
+    equation (:meth:`GridSimulator._swing_step`) and by the analytical SMIB
+    validation (``physics.validation.dynamics_benchmark``), so the integrator
+    that is validated against theory is exactly the one that runs in the sim.
+    """
+    k1 = deriv(state)
+    s2 = tuple(x + 0.5 * dt * k for x, k in zip(state, k1))
+    k2 = deriv(s2)
+    s3 = tuple(x + 0.5 * dt * k for x, k in zip(state, k2))
+    k3 = deriv(s3)
+    s4 = tuple(x + dt * k for x, k in zip(state, k3))
+    k4 = deriv(s4)
+    return tuple(
+        x + (dt / 6.0) * (a + 2.0 * b + 2.0 * c + d)
+        for x, a, b, c, d in zip(state, k1, k2, k3, k4)
+    )
+
+
+# ---------------------------------------------------------------------------
 # Simulator
 # ---------------------------------------------------------------------------
 
@@ -225,15 +253,21 @@ class GridSimulator:
 
             pm_pu = gen.p_mech_mw / BASE_MVA
             pe_pu = gen.p_electrical_mw / BASE_MVA
-            dw = (
-                (pm_pu - pe_pu - gen.damping_D * gen.rotor_speed_rad_s)
-                / gen.inertia_M
-            )
-            gen.rotor_speed_rad_s += dw * dt
-            gen.rotor_angle_rad += gen.rotor_speed_rad_s * dt
+            M = gen.inertia_M
+            D = gen.damping_D
+            accel = pm_pu - pe_pu          # held constant over the tick (Pe from PF)
 
-            gen.rotor_angle_rad = max(-math.pi, min(math.pi, gen.rotor_angle_rad))
-            gen.rotor_speed_rad_s = max(-50.0, min(50.0, gen.rotor_speed_rad_s))
+            # Swing equation as a first-order system  y = (δ, ω):
+            #   dδ/dt = ω,   M·dω/dt = Pm − Pe − D·ω
+            def _swing_deriv(s, _accel=accel, _M=M, _D=D):
+                _delta, omega = s
+                return (omega, (_accel - _D * omega) / _M)
+
+            new_delta, new_omega = rk4_step(
+                (gen.rotor_angle_rad, gen.rotor_speed_rad_s), _swing_deriv, dt
+            )
+            gen.rotor_angle_rad = max(-math.pi, min(math.pi, new_delta))
+            gen.rotor_speed_rad_s = max(-50.0, min(50.0, new_omega))
 
         # Inverter-coupled generators (wind, solar — inertia == 0)
         freq = self._system_frequency()
@@ -455,14 +489,16 @@ class GridSimulator:
     ) -> list[dict]:
         alerts: list[dict] = []
 
-        # Frequency
-        if freq < 49.5:
+        # Frequency — thresholds are deviations from the system nominal so the
+        # same logic works for 50 Hz or 60 Hz systems (NOMINAL_FREQ_HZ).
+        f_dev = freq - NOMINAL_FREQ_HZ
+        if f_dev < -0.5:
             alerts.append({"level": "critical", "msg": f"Under-frequency: {freq:.2f} Hz"})
-        elif freq < 49.8:
+        elif f_dev < -0.2:
             alerts.append({"level": "warning", "msg": f"Low frequency: {freq:.2f} Hz"})
-        if freq > 50.5:
+        elif f_dev > 0.5:
             alerts.append({"level": "critical", "msg": f"Over-frequency: {freq:.2f} Hz"})
-        elif freq > 50.2:
+        elif f_dev > 0.2:
             alerts.append({"level": "warning", "msg": f"High frequency: {freq:.2f} Hz"})
 
         # Tripped elements

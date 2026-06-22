@@ -1,11 +1,10 @@
-# Roadmap — From Demo to Flagship
+# Engineering Roadmap
 
-**Goal:** evolve this from an impressive Palantir-style demo into a project that
-survives a hard technical interview — defensible physics, real platform
-engineering, and a measurably-good AI control layer.
+**Goal:** build this into a project with defensible physics, real platform
+engineering, and a measurably good AI control layer.
 
-**North star:** every milestone below should produce something you can answer a
-hostile follow-up question about. The framing for each item is *"what does this
+**North star:** every milestone below should produce something that holds up to
+a hard follow-up question. The framing for each item is *"what does this
 prove?"*
 
 **Scope decision:** all new work targets [`city-twin/`](../city-twin/). The
@@ -35,7 +34,7 @@ the dataset-generation core, not just an eval harness.
   fallback ([ac_powerflow.py:254-271](../city-twin/backend/physics/ac_powerflow.py#L254-L271)).
 - Structured decision layer — risk classification, SEMI/FULL_AUTO policy with
   countdowns, audit log, outcome monitoring.
-- Ontology + BFS impact propagation, and a Foundry export path.
+- Ontology + BFS impact propagation, and a CSV data-export path.
 
 **The gaps between "demo" and "flagship":**
 1. **Reactive, not predictive.** The grid only responds *after* a fault is
@@ -87,7 +86,7 @@ defining control-room workload), not just how to wire an AC solver.
 - New endpoint `GET /contingencies` → ranked list with severity + violation
   detail. Stream a compact summary in the SSE payload.
 
-**Interview defense to prepare:** why DC-screen-then-AC-verify; what a
+**Design notes:** why DC-screen-then-AC-verify; what a
 contingency "severity score" should weight (overload margin vs. voltage vs.
 islanding); why N-1 and not N-2.
 
@@ -136,7 +135,7 @@ demo — exactly the rigor that separates a flagship from a toy.
 - This requires the simulator to be driveable in-process without the server —
   a small refactor that also makes Milestone 3's tests possible. Build it here.
 
-**Interview defense:** what makes a grid-control decision "good"; why these
+**Design notes:** what makes a grid-control decision "good"; why these
 baselines; how you keep runs deterministic (seed the stochastic wind/solar).
 
 ---
@@ -161,7 +160,7 @@ nothing is tested.
 **Build:**
 - **Persistence** — SQLite (zero-ops, upgradeable to Postgres/Timescale).
   Persist the decision log, alert history, and time-series telemetry; expose
-  history + replay endpoints. The Foundry CSV export becomes one consumer of
+  history + replay endpoints. The CSV data export becomes one consumer of
   this store rather than a separate code path.
 - **Tests** — `pytest` suite:
   - physics: power flow converges at nominal; frequency stays ~50/60 Hz at
@@ -174,7 +173,7 @@ nothing is tested.
 - Fix the README/endpoint drift (`/inject-fault` vs actual `/fault`, etc.)
   while here.
 
-**Interview defense:** why SQLite-first; what you'd change for true
+**Design notes:** why SQLite-first; what you'd change for true
 multi-operator; your testing strategy for a stochastic simulation.
 
 ---
@@ -206,7 +205,7 @@ predictions visibly pay off ("the engine warned about exactly this cascade").
 - The contingency engine's pre-event ranking can now be validated against what
   actually cascades — closing the predictive loop.
 
-**Interview defense:** inverse-time relay coordination; how you prevent
+**Design notes:** inverse-time relay coordination; how you prevent
 unrealistic instant total collapse; the link between N-1 ranking and observed
 cascade paths.
 
@@ -241,9 +240,10 @@ cascade paths.
 > a credible physics-simulation project. [`physics/validation/`](../city-twin/backend/physics/validation/):
 > AC power flow validated against IEEE 9/14/30/57/118 (independent NR vs
 > fast-decoupled solvers agree to ~1e-10, nodal power conserved, losses match
-> published values); the swing integrator validated against the **analytical
-> SMIB small-signal eigenvalue** (simulated period 13.9149 s vs analytical
-> 13.9125 s, 0.017 % error, scales as √inertia). Adds a **turbine-governor**
+> published values); the swing integrator — the **same RK4 routine
+> (`physics.swing.rk4_step`) the live simulator runs** — validated against the
+> **analytical SMIB small-signal eigenvalue** (simulated period 13.9149 s vs
+> analytical 13.9125 s, 0.017 % error, scales as √inertia). Adds a **turbine-governor**
 > primary frequency control model ([governor.py](../city-twin/backend/physics/governor.py),
 > opt-in `GRID_GOVERNOR=1`) — ~40 MW primary response after a 280 MW loss.
 > One command: `python -m physics.validation`. Tested in
@@ -252,7 +252,7 @@ cascade paths.
 
 ## Milestone 7 — Digital-Twin Synchronization (UKF state estimation) — ✅ SHIPPED
 
-> The literal "digital twin" demonstration and the resume headline. A dual
+> The literal "digital twin" demonstration. A dual
 > simulator loop ([`twin/`](../city-twin/backend/twin/)): a **physical plant**
 > (ground-truth dynamics + process noise) and a **twin** that sees only noisy,
 > partial rotor-angle measurements and tracks the plant's full state with an
@@ -322,8 +322,10 @@ cascade paths.
 > **grid-forming** (virtual-inertia + fast-droop) sources. Demonstrates the
 > renewable-integration result — falling inertia drives RoCoF past the 1 Hz/s
 > grid-code limit (1.80 Hz/s at H=2 vs 0.60 at H=6), and grid-forming inverters
-> restore it (0.80 Hz/s). Initial RoCoF validated against the analytical
-> −ΔP/(2H) to **0.00 %**. `python -m physics.frequency_response`,
+> restore it (0.80 Hz/s). The initial RoCoF reproduces the analytical −ΔP/(2H)
+> *by construction*; the full transient is validated against an independent
+> higher-order RK4 reference integrator (`validate_against_reference`).
+> `python -m physics.frequency_response`,
 > `GET /frequency-response`. Tested in
 > [tests/test_frequency_response.py](../city-twin/backend/tests/test_frequency_response.py)
 > (6 passing). Full suite: 87.

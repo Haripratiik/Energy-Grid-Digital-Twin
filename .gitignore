@@ -54,15 +54,20 @@ htmlcov/
 *.pkl
 
 # ── Generated export data ──
+data_export/
 foundry_export/
 
 # ── Cursor / editor state ──
 .cursor/
 
+# ── Claude Code tooling ──
+.claude/
+
 # ── Private / excluded from public repo ──
 VIDEO_SCRIPTS.md
-palantir_grid_twin_prompt.md
-FOUNDRY_BUILD_GUIDE.md
+docs/archive/
+grid-twin/USER_GUIDE.md
+yc-video-storyboard.html
 *.mp4
 *.mov
 *.avi

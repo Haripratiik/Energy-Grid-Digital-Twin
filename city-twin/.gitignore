@@ -54,6 +54,7 @@ htmlcov/
 
 # ── Generated datasets & exports ──
 backend/data/
+backend/data_export/
 backend/foundry_export/
 
 # ── SQLite databases ──

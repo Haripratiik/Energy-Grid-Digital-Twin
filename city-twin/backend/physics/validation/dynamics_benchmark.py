@@ -2,9 +2,9 @@
 
 * **SMIB period** — a single machine against an infinite bus has a textbook
   small-signal oscillation frequency ω_n = √(K_s / M), where K_s is the
-  synchronizing coefficient. We integrate the swing equation with the *same*
-  symplectic-Euler scheme the simulator uses ([swing.py]) and confirm the
-  measured oscillation period matches the analytical value to <2 %.
+  synchronizing coefficient. We integrate the swing equation with the *exact
+  same* RK4 integrator the live simulator uses (``physics.swing.rk4_step``) and
+  confirm the measured oscillation period matches the analytical value to <2 %.
 
 * **Governor response** — with turbine-governors enabled, primary frequency
   control must arrest and partially restore frequency after a generation loss,
@@ -18,7 +18,7 @@ import math
 from pydantic import BaseModel
 
 from physics.network import NOMINAL_FREQ_HZ
-from physics.swing import GridSimulator
+from physics.swing import GridSimulator, rk4_step
 
 
 class SMIBValidation(BaseModel):
@@ -52,17 +52,22 @@ def validate_smib(
     omega_n = math.sqrt(Ks / M)
     T_analytic = 2.0 * math.pi / omega_n
 
-    # Integrate the undamped swing with the simulator's symplectic-Euler scheme:
-    #   M dω/dt = Pm − Pe(δ);  dδ/dt = ω   (update ω first, then δ)
+    # Integrate the undamped swing equation with the *exact same* RK4 integrator
+    # the live simulator uses (physics.swing.rk4_step), so this validates the
+    # production integrator — not a throwaway loop. State y = (δ, ω):
+    #   dδ/dt = ω,   M·dω/dt = Pm − Pe(δ)
+    def _deriv(s):
+        delta_, omega_ = s
+        Pe = (E * V / X) * math.sin(delta_)
+        return (omega_, (Pm - Pe) / M)
+
     delta = delta0 + 0.05                        # small perturbation
     omega = 0.0
     t = 0.0
     prev = delta - delta0
     crossings: list[float] = []
     while t < n_periods * T_analytic:
-        Pe = (E * V / X) * math.sin(delta)
-        omega += (Pm - Pe) / M * dt
-        delta += omega * dt
+        delta, omega = rk4_step((delta, omega), _deriv, dt)
         t += dt
         cur = delta - delta0
         if prev < 0.0 <= cur:                    # upward zero crossing
@@ -124,7 +129,7 @@ def validate_governor(*, settle_ticks: int = 150, post_ticks: int = 2500) -> Gov
 if __name__ == "__main__":
     print("Swing-equation dynamics validation\n")
     smib = validate_smib()
-    print(f"SMIB small-signal oscillation:")
+    print("SMIB small-signal oscillation:")
     print(f"  K_s={smib.synchronizing_coeff}  analytic T={smib.analytic_period_s}s  "
           f"simulated T={smib.simulated_period_s}s  err={smib.rel_error*100:.3f}%  "
           f"{'OK' if smib.passed else 'FAIL'}")

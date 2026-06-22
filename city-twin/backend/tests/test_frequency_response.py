@@ -2,19 +2,29 @@
 
 from __future__ import annotations
 
-import pytest
 
 from physics.frequency_response import (
     FrequencyResponseModel,
     compare_inertia_scenarios,
+    validate_against_reference,
 )
 
 
 def test_initial_rocof_matches_analytic():
-    """Initial RoCoF must equal the textbook −ΔP/(2H)·f₀."""
+    """The measured initial RoCoF reproduces the textbook −ΔP/(2H)·f₀ (which it
+    must, by construction — see analyze_step)."""
     for h in (2.0, 4.0, 6.0):
         r = FrequencyResponseModel(h_sync=h).analyze_step(0.1)
         assert r.rocof_error_pct < 1.0
+
+
+def test_trajectory_matches_independent_reference():
+    """Non-circular check: the model's forward-Euler transient must agree with
+    an independent higher-order (RK4), finer-step reference integration."""
+    r = validate_against_reference()
+    assert r["passed"], r
+    assert r["nadir_abs_err_hz"] < 0.01
+    assert r["rocof_abs_err_hz_s"] < 0.01
 
 
 def test_lower_inertia_gives_steeper_rocof_and_deeper_nadir():

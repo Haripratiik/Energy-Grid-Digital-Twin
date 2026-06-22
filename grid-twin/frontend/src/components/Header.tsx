@@ -39,7 +39,7 @@ export default function Header({ gridState, connectionStatus }: Props) {
   return (
     <header className="h-10 flex items-center justify-between px-4 bg-bg-secondary border-b border-border-subtle shrink-0">
       <div className="font-mono text-xs text-text-secondary tracking-widest uppercase">
-        Grid Twin · Palantir AIP · IEEE 9-Bus
+        Grid Twin · IEEE 9-Bus Digital Twin
       </div>
 
       <div className="flex items-center gap-6">

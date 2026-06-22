@@ -81,12 +81,25 @@ def _hv(v) -> int:
 
 
 def build_real_grid() -> RealGrid:
-    geo = json.load(open(os.path.abspath(_GEOJSON)))
-    subs = [(f["geometry"]["coordinates"][1], f["geometry"]["coordinates"][0])
-            for f in geo["features"] if f["properties"].get("power") == "substation"]
-    plants = [(f["geometry"]["coordinates"][1], f["geometry"]["coordinates"][0])
-              for f in geo["features"] if f["properties"].get("power") == "plant"]
-    lines_raw = [f for f in geo["features"] if f["properties"].get("power") == "line"]
+    with open(os.path.abspath(_GEOJSON)) as fh:
+        geo = json.load(fh)
+    feats = geo.get("features", [])
+
+    def _points(power: str) -> list[tuple[float, float]]:
+        # OSM tags substations/plants as either Point or Polygon; we only snap to
+        # Point geometries (matching the LineString guard used for lines below).
+        return [(f["geometry"]["coordinates"][1], f["geometry"]["coordinates"][0])
+                for f in feats
+                if f.get("properties", {}).get("power") == power
+                and f.get("geometry", {}).get("type") == "Point"]
+
+    subs = _points("substation")
+    plants = _points("plant")
+    lines_raw = [f for f in feats if f.get("properties", {}).get("power") == "line"]
+
+    # No usable substation data → return an empty grid rather than crashing.
+    if not subs:
+        return RealGrid(buses=[], lines=[], n_buses=0, n_lines=0)
 
     def nearest(lat: float, lon: float) -> tuple[int, float]:
         best, bd = -1, 9e9
@@ -200,10 +213,74 @@ def build_real_grid() -> RealGrid:
     return RealGrid(buses=buses, lines=lines, n_buses=n, n_lines=len(lines))
 
 
+def build_real_ontology() -> dict:
+    """An ontology graph (same schema as the synthetic one) over the REAL Georgia
+    transmission grid: real substations and source plants as objects, real lines
+    as links, status from the DC-snapshot loadings. Real topology; the electrical
+    parameters behind the status are estimated (CEII — not public)."""
+    from datetime import datetime, timezone
+
+    from ontology.model import GridAsset, OntologyEdge, OntologyLink, OntologyResponse
+
+    grid = build_real_grid()
+    now = datetime.now(timezone.utc)
+
+    worst: dict[int, float] = {b.id: 0.0 for b in grid.buses}
+    for ln in grid.lines:
+        worst[ln.from_id] = max(worst[ln.from_id], ln.loading_pct)
+        worst[ln.to_id] = max(worst[ln.to_id], ln.loading_pct)
+
+    def status_for(pct: float) -> str:
+        if pct > 100.0:
+            return "OVERLOADED"
+        if pct > 80.0:
+            return "DEGRADED"
+        return "NOMINAL"
+
+    sys_rid = "ri.real-grid.georgia.system"
+    src_rids = [f"ri.real-grid.georgia.substation.{b.id}" for b in grid.buses if b.is_source]
+    nodes: list[GridAsset] = [
+        GridAsset(
+            rid=sys_rid, object_type="GridSystem",
+            display_name="Georgia Transmission (OSM)",
+            properties={
+                "source": grid.source, "substations": grid.n_buses, "lines": grid.n_lines,
+                "note": "real topology & geography · electrical params estimated (CEII)",
+            },
+            links=[OntologyLink(target_rid=r, link_type="hostsSource") for r in src_rids],
+            status="NOMINAL", last_updated=now,
+        )
+    ]
+    for b in grid.buses:
+        rid = f"ri.real-grid.georgia.substation.{b.id}"
+        nodes.append(GridAsset(
+            rid=rid,
+            object_type="Generator" if b.is_source else "Substation",
+            display_name=(f"{b.voltage_kv}kV source {b.id}" if b.is_source
+                          else f"{b.voltage_kv}kV sub {b.id}"),
+            properties={
+                "voltage_kv": b.voltage_kv, "lat": round(b.lat, 4), "lon": round(b.lon, 4),
+                "is_source": b.is_source, "load_mw": b.load_mw,
+                "max_line_loading_pct": round(worst[b.id], 1), "real_topology": True,
+            },
+            links=[], status=status_for(worst[b.id]), last_updated=now,
+        ))
+
+    edges = [
+        OntologyEdge(
+            source_rid=f"ri.real-grid.georgia.substation.{ln.from_id}",
+            target_rid=f"ri.real-grid.georgia.substation.{ln.to_id}",
+            link_type="connectsTo",
+        )
+        for ln in grid.lines
+    ]
+    return OntologyResponse(nodes=nodes, edges=edges).model_dump(mode="json")
+
+
 if __name__ == "__main__":
     g = build_real_grid()
     loadings = [ln.loading_pct for ln in g.lines]
-    print(f"Real Georgia transmission grid from OpenStreetMap:")
+    print("Real Georgia transmission grid from OpenStreetMap:")
     print(f"  {g.n_buses} substations, {g.n_lines} transmission lines")
     kvc = Counter(ln.voltage_kv for ln in g.lines)
     print(f"  voltage classes (kV): {dict(sorted(kvc.items()))}")

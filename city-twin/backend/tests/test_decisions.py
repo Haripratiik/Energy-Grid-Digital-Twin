@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from decisions.action_executor import ActionExecutor
 from decisions.autonomous_engine import AutonomousEngine
 from decisions.models import AutonomousMode, GridDecision, ProposedAction, RiskLevel
@@ -63,6 +65,40 @@ def test_load_shed_execution_reduces_load():
     )
     assert executor.execute(decision)
     assert sim._p_load[bus_id] < before
+
+
+def test_revert_load_shed_restores_pre_state():
+    """ROADMAP M3 promised 'revert restores pre-state' — this is that test, and
+    it guards the LOAD_SHED revert sign bug (revert used to shed again)."""
+    sim = GridSimulator()
+    executor = ActionExecutor(sim)
+    bus_id = 6
+    before = sim._p_load[bus_id]
+
+    decision = GridDecision(
+        risk_level=RiskLevel.CONTROLLED,
+        action=_action(action_type="LOAD_SHED", impact=-30.0,
+                       target="ri.city-grid.main.load-bus.6",
+                       params={"delta_mw": -30.0}),
+    )
+    assert executor.execute(decision)
+    assert sim._p_load[bus_id] < before
+    assert executor.revert(decision)
+    assert decision.status == "REVERTED"
+    assert sim._p_load[bus_id] == pytest.approx(before)
+
+
+def test_revert_rejected_for_irreversible_action():
+    sim = GridSimulator()
+    executor = ActionExecutor(sim)
+    decision = GridDecision(
+        risk_level=RiskLevel.CRITICAL,
+        action=_action(action_type="LINE_SWITCH", impact=5.0, reversible=False,
+                       target="ri.city-grid.main.transmission-line.3"),
+    )
+    executor.execute(decision)
+    assert executor.revert(decision) is False
+    assert decision.status != "REVERTED"
 
 
 def test_semi_mode_auto_executes_advisory():

@@ -1,7 +1,7 @@
 """
 In-Memory Ontology Store & Alert Manager
 =========================================
-Maintains the Palantir Foundry-style ontology graph for the city-scale 80-bus,
+Maintains the object-graph ontology for the city-scale 80-bus,
 3-voltage-tier digital twin.  Every physics tick,
 ``OntologyStore.update_from_physics_state`` syncs simulator telemetry into typed
 ``GridAsset`` nodes while propagating status through the containment hierarchy:
@@ -16,7 +16,6 @@ Maintains the Palantir Foundry-style ontology graph for the city-scale 80-bus,
 
 from __future__ import annotations
 
-import math
 import uuid
 from collections import deque
 from datetime import datetime, timezone

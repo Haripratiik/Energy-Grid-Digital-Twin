@@ -1,7 +1,7 @@
 from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
-from .models import GridDecision, ProposedAction
+from .models import GridDecision
 
 if TYPE_CHECKING:
     from physics.swing import GridSimulator
@@ -25,6 +25,10 @@ class ActionExecutor:
                 delta = params.get("delta_mw", action.estimated_impact_mw or -20)
                 if delta > 0:
                     delta = -delta
+                # Can't shed more than the bus carries — clamp so demand never goes
+                # negative (a non-physical load-acting-as-generator state).
+                cur = self._sim._p_load.get(bus_id, 0.0)
+                delta = -min(abs(delta), cur)
                 self._sim.load_spike(bus_id, delta)
 
             elif action.action_type == "GEN_SETPOINT":
@@ -90,7 +94,9 @@ class ActionExecutor:
             if action.action_type == "LOAD_SHED":
                 bus_id = self._parse_bus_id(action.target_rid)
                 delta = action.parameters.get("delta_mw", 0)
-                self._sim.load_spike(bus_id, -delta)  # reverse the delta
+                # execute() always *sheds* (reduces demand by |delta|); restoring
+                # means adding that load back, not shedding again.
+                self._sim.load_spike(bus_id, abs(delta))
             elif action.action_type == "GEN_SETPOINT":
                 bus_id = self._parse_bus_id(action.target_rid)
                 pre_mw = decision.pre_state_snapshot.get("gen_mw", 0)

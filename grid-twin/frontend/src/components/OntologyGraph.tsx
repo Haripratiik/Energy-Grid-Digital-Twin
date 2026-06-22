@@ -222,7 +222,7 @@ export default function OntologyGraph({
     <div className="flex flex-col h-full relative">
       <div className="px-3 py-2 border-b border-border-subtle bg-bg-tertiary">
         <div className="font-mono text-[10px] text-text-muted uppercase tracking-widest">
-          Foundry Ontology
+          Ontology
         </div>
         <div className="font-mono text-[9px] text-text-muted">
           {nodeCount} objects · {edgeCount} links · {typeCount} types

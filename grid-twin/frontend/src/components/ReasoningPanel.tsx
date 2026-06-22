@@ -100,7 +100,7 @@ export default function ReasoningPanel({ gridState }: Props) {
           }`}
         />
         <span className="font-mono text-[10px] text-text-muted uppercase tracking-widest">
-          GRID-AI · Palantir AIP
+          GRID-AI · Reasoning Engine
         </span>
       </div>
 
