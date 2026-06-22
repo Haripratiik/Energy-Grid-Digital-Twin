@@ -9,14 +9,14 @@
 
 > A physics based power grid digital twin: power system physics validated against IEEE benchmarks, real time state estimation, fast contingency analysis at scale, and an AI operator that can only act through a physics safety gate.
 
-This is a full stack simulation of a synthetic 80 bus grid laid out over the Atlanta metro area, about 2,430 MW of generation, running in near real time. It couples genuine power system physics (a solver validated against the IEEE test systems) with real time state estimation, an autonomous decision layer whose every action is checked by a power flow before it runs, and a live React operator console. The topology and geography are illustrative; the network is not measured utility data, and the README is careful to label what is real, what is synthetic, and what is estimated.
+This is a full stack simulation of a synthetic 80 bus grid laid out over the Atlanta metro area, about 2,430 MW of generation, running in near real time. It couples genuine power system physics (a solver validated against the IEEE test systems) with real time state estimation, an autonomous decision layer whose every action is checked by a power flow before it runs, and a live React operator console. The topology and geography are illustrative rather than measured utility data, and each view labels what is real, synthetic, or estimated.
 
 ## Highlights
 
-Every claim below is backed by a benchmark, an analytical result, or a measurement. See [docs/ROADMAP.md](docs/ROADMAP.md) and the 129 test backend suite (9 torch gated research tests skip unless PyTorch is installed, so 120 run in CI).
+The physics and the AI safety layer are backed by the benchmarks, analytical results, and measurements shown throughout. See [docs/ROADMAP.md](docs/ROADMAP.md) for design notes and the 129 test backend suite (9 torch gated research tests skip unless PyTorch is installed, so 120 run in CI).
 
 - **An AI operator that cannot act unsafely.** A language model proposes corrective actions, but it never touches the grid directly. A deterministic physics verifier re solves the power flow plus an N-1 contingency screen for each action, and a rejection overrules even a human approval. When an action is vetoed, the model re proposes against the physics feedback and the alternative is re verified. See [Physics safety verifier](#physics-safety-verifier).
-- **Validated physics, not plausible physics.** AC power flow matches the IEEE 9, 14, 30, 57, and 118 systems to roughly 1e-10, and the swing equation integrator matches the analytical single machine infinite bus oscillation to 0.017 percent. See [Physics validation](#physics-validation).
+- **Physics validated against IEEE benchmarks.** AC power flow matches the IEEE 9, 14, 30, 57, and 118 systems to roughly 1e-10, and the swing equation integrator matches the analytical single machine infinite bus oscillation to 0.017 percent. See [Physics validation](#physics-validation).
 - **A real digital twin loop.** An Unscented Kalman Filter keeps a model synchronized to a noisy plant from partial sensing, denoises below sensor accuracy, reconstructs unmeasured rotor speeds, and flags anomalies when innovation squared spikes about 100 times. See [Digital twin](#digital-twin).
 - **Contingency screening at scale.** LODF distribution factors screen all N-1 contingencies on a 2,869 bus grid in 152 ms, about 28,000 times faster than brute force and exact to machine precision for the DC model. See [Contingency screening](#contingency-screening-at-scale).
 - **Three grids, one viewer.** Switch between the synthetic Atlanta grid, the real Georgia transmission topology from OpenStreetMap, and a grid you build yourself. The choice drives both the map and the asset graph. See [Three grids](#three-grids).
@@ -40,7 +40,7 @@ Every proposed action is gated by a deterministic verifier ([`decisions/safety_v
 - **Two physics gates.** The action is applied to a copy of the operating point and re solved. First, the steady state AC power flow must converge and must not be materially less secure than the current state. Second, an N-1 contingency screen must show the action does not leave the grid more exposed to the next single failure. Most published language model plus grid systems verify only that a steady state solve converges.
 - **Fail closed.** Any action the verifier cannot model, such as an unknown type or a malformed identifier, is rejected rather than silently certified, and a veto overrules even an operator pressing Approve.
 - **Self correction.** When an action is vetoed, the rejection reason and the before and after severities are fed back to the model, which proposes a different action against that feedback. The alternative is then re verified. Each attempt and its verdict are recorded as a correction trace and shown in the console, which is the difference between a model that is merely gated by physics and one that corrects itself against physics.
-- **Quantified screening fidelity.** The inline N-1 gate is screened, meaning only the worst few contingencies are AC verified, which keeps it fast enough to run on the decision path. [`research/verifier_eval.py`](city-twin/backend/research/verifier_eval.py) measures what that approximation costs: it replays a battery of benign and adversarial proposals through both the fast screened gate and an exhaustive variant that AC verifies every single contingency under the same security criterion. Across 219 proposals spanning settled and stressed operating points, the screened gate caught all 32 actions the exhaustive study rejects (100 percent catch rate, 0 percent false accept) and erred on the conservative side for 5 of them (2.7 percent false reject). It occasionally blocks a safe action but never waves through an unsafe one, which is the right asymmetry for a safety gate. This validates the screening approximation, not absolute safety correctness.
+- **Quantified screening fidelity.** The inline N-1 gate is screened, meaning only the worst few contingencies are AC verified, which keeps it fast enough to run on the decision path. [`research/verifier_eval.py`](city-twin/backend/research/verifier_eval.py) measures what that approximation costs: it replays a battery of benign and adversarial proposals through both the fast screened gate and an exhaustive variant that AC verifies every single contingency under the same security criterion. Across 219 proposals spanning settled and stressed operating points, the screened gate caught all 32 actions the exhaustive study rejects (100 percent catch rate, 0 percent false accept) and erred on the conservative side for 5 of them (2.7 percent false reject). It occasionally blocks a safe action but never waves through an unsafe one, which is the right asymmetry for a safety gate.
 
 ## Architecture
 
@@ -80,7 +80,7 @@ The topology panel and the asset graph are two views of one selected grid. A sin
 
 - **Synthetic Atlanta grid (default).** The live 80 bus simulation, drawn at real Atlanta coordinates over real OpenStreetMap infrastructure on a dark basemap, with landmarks such as Plant Vogtle, Hartsfield-Jackson, Buckhead, and Georgia Tech. The wiring is the synthetic model; the coordinates are real.
 - **Real Georgia transmission.** Built from OpenStreetMap, this is the real Georgia transmission topology: 237 substations and 348 lines across several voltage classes, with source substations near real power plants. The topology and geography are real. The electrical parameters behind it (impedances, thermal ratings, dispatch) are estimated per voltage class, because the real values are protected infrastructure information and are not public. It is rendered both geographically and as its own ontology.
-- **Custom grid builder.** Draw your own buses and lines, set the voltage class, load, and generation per bus, mark a slack, and the backend turns the drawing into a pandapower network, solves an AC power flow, and returns per bus and per line results plus a matching ontology. A grid that does not solve is shown honestly, with unsolved buses greyed out rather than reported as healthy.
+- **Custom grid builder.** Draw your own buses and lines, set the voltage class, load, and generation per bus, mark a slack, and the backend turns the drawing into a pandapower network, solves an AC power flow, and returns per bus and per line results plus a matching ontology. A grid that does not solve has its unsolved buses greyed out rather than shown as healthy.
 
 ## Physics simulation
 
@@ -91,7 +91,7 @@ The topology panel and the asset graph are two views of one selected grid. A sin
 
 ## Physics validation
 
-The simulation physics are validated against recognized benchmarks and analytical theory rather than assumed plausible. Run the full report with:
+The simulation physics are validated against recognized benchmarks and analytical theory. Run the full report with:
 
 ```bash
 cd city-twin/backend
@@ -206,7 +206,7 @@ For a 12 percent generation loss, the initial rate of change of frequency reprod
 
 ## Research extension: learned world model
 
-Beyond the live console, the backend includes an analysis and research layer (see [research/README.md](city-twin/backend/research/README.md) for the full design and the honestly reported findings).
+Beyond the live console, the backend includes an analysis and research layer (see [research/README.md](city-twin/backend/research/README.md) for the full design and findings).
 
 A headless, deterministic evaluation harness ([`eval/`](city-twin/backend/eval/)) replays seeded fault scenarios under pluggable control policies (`do_nothing`, a topology aware `greedy_rule`, and `llm`) that all act through the same executor as the live engine, and scores them on grid stability metrics. The same machinery records graph tensors with outcome labels, which form the training corpus for a learned grid world model.
 
@@ -216,7 +216,7 @@ python -m eval.run_eval                                   # compare controllers 
 python -m eval.generate_dataset --out data/gridworld_v1   # GNN ready trajectory dataset
 ```
 
-The research extension ([`research/`](city-twin/backend/research/)) trains action conditioned graph models on those trajectories to predict near term grid security, benchmarking a message passing GNN against topology blind and persistence baselines with honest by trajectory and held out fault family splits. An action conditioned dynamics model predicts the next state with the action injected at the acted node, beats the persistence baseline on the dynamic angle quantities, and an action ablation confirms it causally uses interventions (angle generalization significant by a trajectory bootstrap, 90 percent confidence interval from +3.4 percent to +12.1 percent, even on a held out fault family). The honest finding is that line loading prediction stays persistence hard, so a physics informed flow head that decodes loading from predicted angles through the DC line flow law is provided as an open problem rather than a solved one: it reaches +90 percent against persistence with true angles (an invertibility check) but stays below persistence with the model's own angles. The full writeup, including what does not work, is in [research/README.md](city-twin/backend/research/README.md).
+The research extension ([`research/`](city-twin/backend/research/)) trains action conditioned graph models on those trajectories to predict near term grid security, benchmarking a message passing GNN against topology blind and persistence baselines with leak free by trajectory and held out fault family splits. An action conditioned dynamics model predicts the next state with the action injected at the acted node, beats the persistence baseline on the dynamic angle quantities, and an action ablation confirms it causally uses interventions (angle generalization significant by a trajectory bootstrap, 90 percent confidence interval from +3.4 percent to +12.1 percent, even on a held out fault family). Line loading prediction stays persistence hard, and a physics informed flow head that decodes loading from predicted angles through the DC line flow law remains an open problem: it reaches +90 percent against persistence with true angles (an invertibility check) but stays below persistence with the model's own angles. The full writeup is in [research/README.md](city-twin/backend/research/README.md).
 
 ## Operator console
 
