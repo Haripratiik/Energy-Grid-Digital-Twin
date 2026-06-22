@@ -389,10 +389,3 @@ Energy-Grid-Digital-Twin/
 `city-twin/` is the primary app: the full 80 bus Atlanta metro simulation with the decision engine, ontology, reasoning, and chat systems, using OpenAI GPT-4o.
 
 `grid-twin/` is a frozen reference implementation of the IEEE 9 bus test system, the standard academic benchmark in power systems. It uses JAX for accelerated numerics and Anthropic Claude for reasoning, and is kept as a lighter reference and for comparing reasoning backends. All active development targets `city-twin/`.
-
-## Security notes
-
-- API keys are loaded only from `.env` files, which are excluded from version control. No secrets are hardcoded anywhere in the source.
-- User submitted custom grid specifications are validated and coerced by Pydantic, and identifiers are parsed defensively, so they cannot reach a file, shell, or database sink.
-- AI and user text is rendered through React with auto escaping and a dependency free Markdown renderer that never injects raw HTML.
-- These are development servers and are not production hardened. CORS is restricted to `localhost:5173`, and the servers bind to localhost. Add authentication before exposing them on any network.
