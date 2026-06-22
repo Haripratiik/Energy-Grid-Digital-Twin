@@ -13,7 +13,7 @@ This is a full stack simulation of a synthetic 80 bus grid laid out over the Atl
 
 ## Highlights
 
-The physics and the AI safety layer are backed by the benchmarks, analytical results, and measurements shown throughout. See [docs/ROADMAP.md](docs/ROADMAP.md) for design notes and the 129 test backend suite (9 torch gated research tests skip unless PyTorch is installed, so 120 run in CI).
+The physics and the AI safety layer are backed by the benchmarks, analytical results, and measurements shown throughout, and by the 129 test backend suite (9 torch gated research tests skip unless PyTorch is installed, so 120 run in CI).
 
 - **An AI operator that cannot act unsafely.** A language model proposes corrective actions, but it never touches the grid directly. A deterministic physics verifier re solves the power flow plus an N-1 contingency screen for each action, and a rejection overrules even a human approval. When an action is vetoed, the model re proposes against the physics feedback and the alternative is re verified. See [Physics safety verifier](#physics-safety-verifier).
 - **Physics validated against IEEE benchmarks.** AC power flow matches the IEEE 9, 14, 30, 57, and 118 systems to roughly 1e-10, and the swing equation integrator matches the analytical single machine infinite bus oscillation to 0.017 percent. See [Physics validation](#physics-validation).

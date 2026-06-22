@@ -63,9 +63,11 @@ foundry_export/
 # ── Claude Code tooling ──
 .claude/
 
-# ── Private / excluded from public repo ──
+# ── Private / excluded from public repo (planning, strategy, internal notes) ──
 VIDEO_SCRIPTS.md
 docs/archive/
+docs/ROADMAP.md
+docs/TOWARD-A-TRUE-DIGITAL-TWIN.md
 grid-twin/USER_GUIDE.md
 yc-video-storyboard.html
 *.mp4
