@@ -50,6 +50,30 @@ contingency_analyzer: ContingencyAnalyzer
 store: GridStore
 
 _broadcast_queues: list[asyncio.Queue] = []
+
+# Pushed into a subscriber's queue when the broadcaster evicts it for falling
+# behind. The generator has to LEARN about the eviction: without this it keeps
+# awaiting a queue nobody writes to any more, so it emits ": keepalive" forever
+# and the browser sees a perfectly healthy stream that will never carry data
+# again. Closing the response instead lets EventSource reconnect, which is what
+# it is designed to do. Evicting without telling the client is not isolation,
+# it is a silent hang.
+_EVICTED = object()
+
+
+def _evict(q: "asyncio.Queue") -> None:
+    """Drop a subscriber that has fallen behind, and tell it that it was dropped.
+
+    The queue is full by definition when we get here, so there is no room for the
+    sentinel until we make some. The payloads being discarded are the ones this
+    subscriber was already too slow to read.
+    """
+    while True:
+        try:
+            q.get_nowait()
+        except asyncio.QueueEmpty:
+            break
+    q.put_nowait(_EVICTED)
 _sim_task: Optional[asyncio.Task] = None
 _demo_running: bool = False
 _demo_phase: Optional[str] = None
@@ -157,6 +181,7 @@ async def simulation_loop() -> None:
                     dead.append(q)
             for q in dead:
                 _broadcast_queues.remove(q)
+                _evict(q)
 
         await asyncio.sleep(0.05)
 
@@ -317,6 +342,10 @@ async def stream_state(request: Request):
                     break
                 try:
                     payload = await asyncio.wait_for(queue.get(), timeout=1.0)
+                    if payload is _EVICTED:
+                        # Dropped for being too slow. End the response so the client
+                        # reconnects instead of waiting on a queue nobody writes to.
+                        break
                     yield f"data: {payload}\n\n"
                 except asyncio.TimeoutError:
                     yield ": keepalive\n\n"

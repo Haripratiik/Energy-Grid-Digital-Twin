@@ -30,6 +30,12 @@ class UnscentedKalmanFilter:
         self.x = np.zeros(n_states)
         self.P = np.eye(n_states)
 
+        # Innovation covariance from the most recent update(). None until one
+        # has run: normalized_innovation_sq() is meaningless before there is an
+        # innovation to normalise, and an explicit error beats an AttributeError
+        # raised from an attribute that was never assigned.
+        self._last_S: np.ndarray | None = None
+
         lam = alpha ** 2 * (n_states + kappa) - n_states
         self._lambda = lam
         c = n_states + lam
@@ -83,4 +89,9 @@ class UnscentedKalmanFilter:
     def normalized_innovation_sq(self, innovation: np.ndarray) -> float:
         """Mahalanobis² of the innovation — χ²-distributed when the model fits;
         a spike signals the plant has diverged from the twin's model."""
+        if self._last_S is None:
+            raise RuntimeError(
+                "normalized_innovation_sq() requires a preceding update(): "
+                "the innovation covariance does not exist until one has run."
+            )
         return float(innovation @ np.linalg.solve(self._last_S, innovation))
